@@ -1,0 +1,14 @@
+[package]
+name = "pte-assets"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rayon.workspace = true
+lzma-rs = "0.3"
+image = { version = "0.25", default-features = false, features = ["bmp"] }

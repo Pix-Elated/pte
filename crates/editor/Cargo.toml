@@ -1,0 +1,32 @@
+[package]
+name = "pte"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "pte"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rayon.workspace = true
+
+pte-assets = { path = "../assets" }
+pte-appearances = { path = "../appearances" }
+pte-otbm = { path = "../otbm" }
+tibia-spr-dat = { path = "../spr_dat" }
+
+rand.workspace = true
+quick-xml.workspace = true
+
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "wgpu", "persistence"] }
+egui = "0.31"
+egui_extras = { version = "0.31", features = ["image"] }
+image = { version = "0.25", default-features = false, features = ["bmp", "png"] }
+rfd = "0.15"
+tiny_http = "0.12.0"

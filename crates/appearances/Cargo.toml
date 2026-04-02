@@ -1,0 +1,13 @@
+[package]
+name = "pte-appearances"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+prost = "0.13"
+
+[build-dependencies]
+prost-build = "0.13"

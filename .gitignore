@@ -1,0 +1,19 @@
+# Build artifacts
+/target/
+
+# Editor config (user-specific paths)
+editor_config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python MCP server
+__pycache__/
+*.pyc

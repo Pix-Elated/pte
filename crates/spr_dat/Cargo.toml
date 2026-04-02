@@ -1,0 +1,11 @@
+[package]
+name = "tibia-spr-dat"
+version.workspace = true
+edition.workspace = true
+description = "Reader/writer for legacy Tibia SPR (sprites) and DAT (metadata) files"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+byteorder.workspace = true
