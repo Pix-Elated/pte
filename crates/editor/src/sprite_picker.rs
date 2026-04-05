@@ -258,6 +258,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
         .floor()
         .max(1.0) as usize;
 
+    let current_selected = state.effective_selected_id();
+    let current_tab = state.active_tab;
+
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
@@ -276,7 +279,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     let sprite_id = resolve_appearance_sprite(
                         appearance, direction, state.animate_sprites, anim_time_ms,
                     );
-                    let selected = state.selected_item_id == Some(id);
+                    let selected = current_selected == Some(id);
 
                     // Frame color
                     let frame_color = if selected {
@@ -304,7 +307,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
                     // Try to draw sprite texture
                     if let Some(sid) = sprite_id {
-                        if let Some(tex) = state.sprite_textures.get(&sid) {
+                        if let Some(tex) = crate::viewport::get_or_upload(&mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), sid) {
                             let inner = rect.shrink(3.0);
                             ui.painter().image(
                                 tex.id(),
@@ -337,13 +340,26 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
                     // Click to select
                     if response.clicked() {
-                        state.selected_item_id = Some(id);
-                        state.active_tool = crate::state::ToolType::Brush;
+                        match current_tab {
+                            crate::state::WorkspaceTab::SpriteViewer => {
+                                state.viewer_selected_id = Some(id);
+                            }
+                            crate::state::WorkspaceTab::MapEditor => {
+                                state.selected_item_id = Some(id);
+                            }
+                        }
                     }
 
                     // Double-click to open sprite editor
                     if response.double_clicked() {
-                        state.selected_item_id = Some(id);
+                        match current_tab {
+                            crate::state::WorkspaceTab::SpriteViewer => {
+                                state.viewer_selected_id = Some(id);
+                            }
+                            crate::state::WorkspaceTab::MapEditor => {
+                                state.selected_item_id = Some(id);
+                            }
+                        }
                         // Signal that we want to open the editor — handled by app
                         state.sprite_editor.open = false; // will be opened by app
                         state.sprite_editor.editing_sprite_id = Some(id);

@@ -30,3 +30,8 @@ egui_extras = { version = "0.31", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "png"] }
 rfd = "0.15"
 tiny_http = "0.12.0"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+semver = "1"
+self-replace = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+dirs = "6"

@@ -21,8 +21,7 @@ pub struct DiscoveredProject {
     pub catalog_dir: PathBuf,
     /// Version label (from folder name, e.g. "1310", "1500")
     pub version: String,
-    /// Catalog file size
-    pub catalog_size: u64,
+
     /// The world/ directory containing maps (if found)
     pub world_dir: Option<PathBuf>,
     /// Main map file (e.g. xtrails.otbm) — the primary editable map
@@ -59,16 +58,6 @@ impl DiscoveredProject {
             + self.world_change_maps.len()
             + self.event_maps.len()
             + self.other_maps.len()
-    }
-
-    pub fn total_map_size(&self) -> u64 {
-        let main = self.main_map.as_ref().map_or(0, |m| m.size);
-        let sum = |maps: &[MapEntry]| maps.iter().map(|m| m.size).sum::<u64>();
-        main + sum(&self.custom_maps)
-            + sum(&self.quest_maps)
-            + sum(&self.world_change_maps)
-            + sum(&self.event_maps)
-            + sum(&self.other_maps)
     }
 }
 
@@ -147,8 +136,8 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
 
     // Phase 2: For each catalog, find the nearest world/ directory and group maps
     let mut projects = Vec::new();
-    for (catalog_dir, version, catalog_size) in catalogs {
-        let project = build_project(root, &catalog_dir, &version, catalog_size, &config_map_names, &world_dirs);
+    for (catalog_dir, version, _catalog_size) in catalogs {
+        let project = build_project(root, &catalog_dir, &version, &config_map_names, &world_dirs);
         projects.push(project);
     }
 
@@ -167,14 +156,12 @@ fn build_project(
     _scan_root: &Path,
     catalog_dir: &Path,
     version: &str,
-    catalog_size: u64,
     config_map_names: &BTreeMap<PathBuf, String>,
     discovered_world_dirs: &[PathBuf],
 ) -> DiscoveredProject {
     let mut project = DiscoveredProject {
         catalog_dir: catalog_dir.to_path_buf(),
         version: version.to_string(),
-        catalog_size,
         world_dir: None,
         main_map: None,
         custom_maps: Vec::new(),
@@ -496,13 +483,29 @@ fn format_size(bytes: u64) -> String {
 // ── Scanner state + UI ──
 
 /// Scanner state stored in EditorState.
-#[derive(Debug, Clone, Default)]
 pub struct ScannerState {
     pub scan_root: Option<PathBuf>,
     pub scan_result: Option<ScanResult>,
     /// Which project the user is hovering/expanding
     pub expanded_project: Option<usize>,
     pub open: bool,
+    /// Background scan receiver
+    pub scan_rx: Option<std::sync::mpsc::Receiver<ScanResult>>,
+    /// True while a background scan is in progress
+    pub scanning: bool,
+}
+
+impl Default for ScannerState {
+    fn default() -> Self {
+        Self {
+            scan_root: None,
+            scan_result: None,
+            expanded_project: None,
+            open: false,
+            scan_rx: None,
+            scanning: false,
+        }
+    }
 }
 
 /// Action from the scanner dialog.
@@ -514,6 +517,8 @@ pub enum ScannerAction {
         asset_dir: PathBuf,
         main_map: PathBuf,
         custom_maps: Vec<PathBuf>,
+        /// Full project info for the map switcher panel
+        project: DiscoveredProject,
     },
 }
 
@@ -526,6 +531,25 @@ pub fn show(ctx: &egui::Context, scanner: &mut ScannerState) -> ScannerAction {
     // Use a shared action slot that the card callbacks can write to
     let mut pending_action: Option<ScannerAction> = None;
 
+    // Poll background scanner
+    if let Some(ref rx) = scanner.scan_rx {
+        match rx.try_recv() {
+            Ok(result) => {
+                scanner.scan_result = Some(result);
+                scanner.scanning = false;
+                scanner.scan_rx = None;
+                scanner.expanded_project = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                ctx.request_repaint();
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                scanner.scanning = false;
+                scanner.scan_rx = None;
+            }
+        }
+    }
+
     egui::Window::new("Open Project")
         .default_size([600.0, 500.0])
         .resizable(true)
@@ -534,19 +558,34 @@ pub fn show(ctx: &egui::Context, scanner: &mut ScannerState) -> ScannerAction {
         .show(ctx, |ui| {
             // Scan button + path
             ui.horizontal(|ui| {
-                if ui.button("📂 Choose Folder…").clicked() {
-                    if let Some(dir) = rfd::FileDialog::new()
-                        .set_title("Select OT Project Root")
-                        .pick_folder()
-                    {
-                        let result = scan_directory(&dir, 8);
-                        scanner.scan_root = Some(dir);
-                        scanner.scan_result = Some(result);
-                        scanner.expanded_project = None;
+                let scanning = scanner.scanning;
+                ui.add_enabled_ui(!scanning, |ui| {
+                    if ui.button("📂 Choose Folder…").clicked() {
+                        if let Some(dir) = rfd::FileDialog::new()
+                            .set_title("Select OT Project Root")
+                            .pick_folder()
+                        {
+                            scanner.scan_root = Some(dir.clone());
+                            scanner.scanning = true;
+                            scanner.scan_result = None;
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            scanner.scan_rx = Some(rx);
+                            std::thread::spawn(move || {
+                                let result = scan_directory(&dir, 8);
+                                let _ = tx.send(result);
+                            });
+                        }
                     }
-                }
+                });
 
-                if let Some(ref root) = scanner.scan_root {
+                if scanning {
+                    ui.spinner();
+                    ui.label(
+                        egui::RichText::new("Scanning…")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
+                } else if let Some(ref root) = scanner.scan_root {
                     ui.label(
                         egui::RichText::new(root.display().to_string())
                             .size(10.0)
@@ -694,6 +733,7 @@ fn show_project_card(
                                 asset_dir: project.catalog_dir.clone(),
                                 main_map: main.path.clone(),
                                 custom_maps: project.custom_maps.iter().map(|m| m.path.clone()).collect(),
+                                project: project.clone(),
                             });
                         }
                     }

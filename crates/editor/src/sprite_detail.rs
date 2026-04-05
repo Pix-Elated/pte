@@ -20,7 +20,7 @@ const FRAME_THUMB_SIZE: f32 = 40.0;
 pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
     let mut action = DetailAction::None;
 
-    let item_id = match state.selected_item_id {
+    let item_id = match state.effective_selected_id() {
         Some(id) => id,
         None => {
             ui.vertical_centered(|ui| {
@@ -114,7 +114,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
             draw_checkerboard(ui.painter(), preview_rect, 8.0);
 
             if let Some(sid) = sprite_id {
-                if let Some(tex) = state.sprite_textures.get(&sid) {
+                if let Some(tex) = crate::viewport::get_or_upload(&mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), sid) {
                     ui.painter().image(
                         tex.id(),
                         preview_rect,
@@ -178,7 +178,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
                                 ui.painter().rect_filled(rect, 3.0, bg);
                                 ui.painter().rect_stroke(rect, 3.0, (0.5, border), egui::StrokeKind::Outside);
 
-                                if let Some(tex) = state.sprite_textures.get(&sid) {
+                                if let Some(tex) = crate::viewport::get_or_upload(&mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), sid) {
                                     let inner = rect.shrink(2.0);
                                     ui.painter().image(
                                         tex.id(),

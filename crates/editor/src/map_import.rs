@@ -118,8 +118,8 @@ fn do_import(state: &mut EditorState) {
         }
     }
 
-    // Drop the mutable borrow on map_data before accessing other state fields
-    drop(map);
+    // Release the mutable borrow on map_data before accessing other state fields
+    let _ = map;
 
     if !undo_before.is_empty() {
         state.push_undo(UndoAction {

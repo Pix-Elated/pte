@@ -1,5 +1,6 @@
 # Build artifacts
 /target/
+/dist/
 
 # Editor config (user-specific paths)
 editor_config.json

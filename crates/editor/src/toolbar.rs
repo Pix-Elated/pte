@@ -1,9 +1,13 @@
-//! Ribbon toolbar — two-row tool strip with icons, brush options, undo/redo, zoom.
+//! Ribbon toolbar — professional two-row tool strip inspired by RME.
+//!
+//! Row 1: Icon-only tool buttons | Undo/Redo | Zoom | Active brush indicator
+//! Row 2: Context-sensitive options (brush size, shape, eraser mode, etc.)
 
 use crate::brushes::door::DoorVariant;
 use crate::brushes::shape::BrushShape;
-use crate::state::{EditorState, ToolType};
+use crate::state::{EditorState, EraserMode, ToolType};
 use crate::theme;
+use crate::icons;
 
 /// Actions the toolbar can request from the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,97 +21,107 @@ pub enum ToolbarAction {
     FitToMap,
 }
 
+// ── Sizing constants ──────────────────────────────────────────────
+
+const TOOL_BTN_SIZE: f32 = 28.0;       // Square tool buttons
+const TOOL_ICON_SIZE: f32 = 15.0;      // Icon font size
+const SMALL_BTN_H: f32 = 20.0;         // Secondary buttons height
+const OPTION_LABEL_SIZE: f32 = 10.0;   // Row 2 label size
+const PRESET_BTN_SIZE: f32 = 20.0;     // Size preset button dimensions
+
 pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> ToolbarAction {
     let mut action = ToolbarAction::None;
 
-    // ── Row 1: Tools + Undo/Redo + Zoom ──
+    // ── Row 1: Icon tools | History | Zoom | Active brush ──
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 1.0;
+        ui.spacing_mut().item_spacing.x = 2.0;
 
-        // ── Primary tools group ──
-        group_label(ui, "TOOLS");
+        // ── Drawing tools ──
         for tool in [
             ToolType::Brush,
             ToolType::Eraser,
             ToolType::Fill,
-            ToolType::Select,
             ToolType::Eyedropper,
+            ToolType::Select,
         ] {
-            tool_button(ui, &mut state.active_tool, tool);
+            icon_tool_button(ui, &mut state.active_tool, tool);
         }
 
-        ui.add_space(4.0);
-        thin_separator(ui);
-        ui.add_space(4.0);
+        separator(ui);
 
-        // ── Placement tools group ──
+        // ── Placement tools ──
         let has_doors = !state.brush_registry.brushes_of_type(crate::brushes::BrushType::Door).is_empty();
         let has_creatures = !state.brush_registry.brushes_of_type(crate::brushes::BrushType::Creature).is_empty();
         let has_spawns = !state.brush_registry.brushes_of_type(crate::brushes::BrushType::Spawn).is_empty();
         let has_waypoints = !state.brush_registry.brushes_of_type(crate::brushes::BrushType::Waypoint).is_empty();
 
-        if has_doors || has_creatures || has_spawns || has_waypoints {
-            group_label(ui, "PLACE");
-            if has_doors { tool_button(ui, &mut state.active_tool, ToolType::Door); }
-            if has_creatures { tool_button(ui, &mut state.active_tool, ToolType::Creature); }
-            if has_spawns { tool_button(ui, &mut state.active_tool, ToolType::Spawn); }
-            if has_waypoints { tool_button(ui, &mut state.active_tool, ToolType::Waypoint); }
+        if has_doors { icon_tool_button(ui, &mut state.active_tool, ToolType::Door); }
+        if has_creatures { icon_tool_button(ui, &mut state.active_tool, ToolType::Creature); }
+        if has_spawns { icon_tool_button(ui, &mut state.active_tool, ToolType::Spawn); }
+        if has_waypoints { icon_tool_button(ui, &mut state.active_tool, ToolType::Waypoint); }
 
-            ui.add_space(4.0);
-            thin_separator(ui);
-            ui.add_space(4.0);
+        if has_doors || has_creatures || has_spawns || has_waypoints {
+            separator(ui);
         }
 
-        // ── Undo / Redo group ──
-        group_label(ui, "HISTORY");
+        // ── Undo / Redo ──
+        if lucide_btn(ui, icons::UNDO, state.can_undo(), "Undo [Ctrl+Z]").clicked() {
+            action = ToolbarAction::Undo;
+        }
+        if lucide_btn(ui, icons::REDO, state.can_redo(), "Redo [Ctrl+Y]").clicked() {
+            action = ToolbarAction::Redo;
+        }
 
-        let undo_btn = icon_btn(ui, "↩", state.can_undo(), "Undo [Ctrl+Z]");
-        if undo_btn.clicked() { action = ToolbarAction::Undo; }
+        separator(ui);
 
-        let redo_btn = icon_btn(ui, "↪", state.can_redo(), "Redo [Ctrl+Y]");
-        if redo_btn.clicked() { action = ToolbarAction::Redo; }
-
-        ui.add_space(4.0);
-        thin_separator(ui);
-        ui.add_space(4.0);
-
-        // ── Zoom group ──
-        group_label(ui, "ZOOM");
-        if icon_btn(ui, "−", true, "Zoom Out").clicked() { action = ToolbarAction::ZoomOut; }
+        // ── Zoom ──
+        if lucide_btn(ui, icons::ZOOM_OUT, true, "Zoom Out [-]").clicked() {
+            action = ToolbarAction::ZoomOut;
+        }
         ui.label(
             egui::RichText::new(format!("{:.0}%", state.camera.zoom * 100.0))
                 .size(10.0)
                 .color(theme::TEXT_PRIMARY)
                 .strong(),
         );
-        if icon_btn(ui, "+", true, "Zoom In").clicked() { action = ToolbarAction::ZoomIn; }
-        if icon_btn(ui, "⊙", true, "Reset Zoom [1:1]").clicked() { action = ToolbarAction::ZoomReset; }
-        if icon_btn(ui, "⊞", true, "Fit Map").clicked() { action = ToolbarAction::FitToMap; }
+        if lucide_btn(ui, icons::ZOOM_IN, true, "Zoom In [+]").clicked() {
+            action = ToolbarAction::ZoomIn;
+        }
+        if lucide_btn(ui, icons::SCAN, true, "Reset Zoom [Ctrl+0]").clicked() {
+            action = ToolbarAction::ZoomReset;
+        }
+        if lucide_btn(ui, icons::GRID, true, "Fit Map [Ctrl+Shift+F]").clicked() {
+            action = ToolbarAction::FitToMap;
+        }
 
-        // ── Right-aligned: active brush indicator ──
+        // ── Right-aligned: Active brush indicator ──
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some(brush_id) = state.active_brush {
                 if let Some(brush) = state.brush_registry.get(brush_id) {
+                    // Sprite preview
+                    let look = brush.look_id() as u32;
+                    let preview_size = egui::vec2(20.0, 20.0);
+                    let (rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::hover());
+                    if let Some(tex) = crate::viewport::get_or_upload(
+                        &mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), look,
+                    ) {
+                        ui.painter().image(
+                            tex.id(), rect,
+                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
+                    }
                     ui.label(
-                        egui::RichText::new(format!("▸ {}", brush.name()))
+                        egui::RichText::new(brush.name())
                             .size(11.0)
                             .color(theme::ACCENT),
                     );
                 }
             } else if let Some(id) = state.selected_item_id {
                 ui.label(
-                    egui::RichText::new(format!("▸ Item #{}", id))
+                    egui::RichText::new(format!("Item #{}", id))
                         .size(11.0)
-                        .color(theme::ACCENT),
-                );
-            }
-
-            let count = state.brush_registry.count();
-            if count > 0 {
-                ui.label(
-                    egui::RichText::new(format!("[{} brushes]", count))
-                        .size(9.5)
-                        .color(theme::TEXT_MUTED),
+                        .color(theme::TEXT_SECONDARY),
                 );
             }
         });
@@ -119,145 +133,50 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> ToolbarAction {
 
         match state.active_tool {
             ToolType::Brush | ToolType::Eraser => {
-                // Zone brush indicator (if active)
-                if let Some(zone) = state.active_zone_flag {
-                    ui.label(
-                        egui::RichText::new(format!("ZONE: {}", zone.label()))
-                            .size(10.0)
-                            .color(egui::Color32::WHITE)
-                            .strong()
-                            .background_color(zone.color()),
-                    );
-                    if ui.add(
-                        egui::Button::new(egui::RichText::new("✕").size(10.0))
-                            .min_size(egui::vec2(18.0, 16.0))
-                    ).on_hover_text("Clear zone brush").clicked() {
-                        state.active_zone_flag = None;
-                    }
-                    ui.add_space(6.0);
-                    thin_separator(ui);
-                    ui.add_space(4.0);
+                // Zone/House indicators
+                show_active_markers(ui, state);
+
+                // Brush size
+                option_label(ui, "Size");
+                if small_btn(ui, "−").clicked() {
+                    let v = (state.brush_size as i32 - 2).max(1);
+                    state.brush_size = if v % 2 == 0 { (v + 1) as u32 } else { v as u32 };
                 }
-
-                // House brush indicator (if active)
-                if let Some(hid) = state.active_house_id {
-                    ui.label(
-                        egui::RichText::new(format!("HOUSE: #{}", hid))
-                            .size(10.0)
-                            .color(egui::Color32::WHITE)
-                            .strong()
-                            .background_color(egui::Color32::from_rgb(120, 80, 200)),
-                    );
-                    if ui.add(
-                        egui::Button::new(egui::RichText::new("✕").size(10.0))
-                            .min_size(egui::vec2(18.0, 16.0))
-                    ).on_hover_text("Clear house brush").clicked() {
-                        state.active_house_id = None;
-                    }
-                    ui.add_space(6.0);
-                    thin_separator(ui);
-                    ui.add_space(4.0);
-                }
-
-                // Brush size with visual + and – buttons
-                ui.label(egui::RichText::new("Size").size(10.0).color(theme::TEXT_MUTED));
-
-                if ui.add(
-                    egui::Button::new(egui::RichText::new("−").size(11.0))
-                        .min_size(egui::vec2(20.0, 18.0))
-                ).clicked() {
-                    let cur = state.brush_size as i32;
-                    let new = (cur - 2).max(1);
-                    state.brush_size = if new % 2 == 0 { (new + 1) as u32 } else { new as u32 };
-                }
-
                 ui.label(
                     egui::RichText::new(format!("{}", state.brush_size))
-                        .size(12.0)
+                        .size(11.0)
                         .color(theme::TEXT_PRIMARY)
                         .strong(),
                 );
-
-                if ui.add(
-                    egui::Button::new(egui::RichText::new("+").size(11.0))
-                        .min_size(egui::vec2(20.0, 18.0))
-                ).clicked() {
-                    let cur = state.brush_size as i32;
-                    let new = (cur + 2).min(15);
-                    state.brush_size = if new % 2 == 0 { (new + 1) as u32 } else { new as u32 };
+                if small_btn(ui, "+").clicked() {
+                    let v = (state.brush_size as i32 + 2).min(15);
+                    state.brush_size = if v % 2 == 0 { (v + 1) as u32 } else { v as u32 };
                 }
 
-                // Discrete size presets
-                ui.add_space(4.0);
+                // Size presets
                 for &preset in &[1u32, 3, 5, 7, 9, 11] {
-                    let selected = state.brush_size == preset;
-                    let btn = egui::Button::new(
-                        egui::RichText::new(format!("{}", preset))
-                            .size(9.5)
-                            .color(if selected { egui::Color32::WHITE } else { theme::TEXT_SECONDARY }),
-                    )
-                    .fill(if selected { theme::ACCENT } else { theme::BG_RAISED })
-                    .corner_radius(egui::CornerRadius::same(2))
-                    .min_size(egui::vec2(20.0, 16.0));
-                    if ui.add(btn).clicked() {
-                        state.brush_size = preset;
-                    }
+                    preset_btn(ui, &mut state.brush_size, preset);
                 }
 
-                ui.add_space(6.0);
-                thin_separator(ui);
-                ui.add_space(4.0);
+                separator(ui);
 
                 // Shape toggles
-                ui.label(egui::RichText::new("Shape").size(10.0).color(theme::TEXT_MUTED));
+                option_label(ui, "Shape");
+                shape_toggle(ui, &mut state.brush_shape, BrushShape::Square, "■", "Square");
+                shape_toggle(ui, &mut state.brush_shape, BrushShape::Circle, "●", "Circle");
 
-                let sq_sel = state.brush_shape == BrushShape::Square;
-                let sq_btn = egui::Button::new(
-                    egui::RichText::new("■")
-                        .size(12.0)
-                        .color(if sq_sel { egui::Color32::WHITE } else { theme::TEXT_SECONDARY }),
-                )
-                .fill(if sq_sel { theme::ACCENT } else { theme::BG_RAISED })
-                .corner_radius(egui::CornerRadius::same(2))
-                .min_size(egui::vec2(22.0, 18.0));
-                if ui.add(sq_btn).on_hover_text("Square brush").clicked() {
-                    state.brush_shape = BrushShape::Square;
-                }
-
-                let ci_sel = state.brush_shape == BrushShape::Circle;
-                let ci_btn = egui::Button::new(
-                    egui::RichText::new("●")
-                        .size(12.0)
-                        .color(if ci_sel { egui::Color32::WHITE } else { theme::TEXT_SECONDARY }),
-                )
-                .fill(if ci_sel { theme::ACCENT } else { theme::BG_RAISED })
-                .corner_radius(egui::CornerRadius::same(2))
-                .min_size(egui::vec2(22.0, 18.0));
-                if ui.add(ci_btn).on_hover_text("Circle brush").clicked() {
-                    state.brush_shape = BrushShape::Circle;
-                }
-
-                // Mode indicator for eraser
+                // Eraser-specific: mode selector
                 if state.active_tool == ToolType::Eraser {
-                    ui.add_space(6.0);
-                    thin_separator(ui);
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new("ERASER")
-                            .size(10.0)
-                            .color(theme::ERROR)
-                            .strong(),
-                    );
-                    ui.label(
-                        egui::RichText::new("Shift+click = erase only items")
-                            .size(9.5)
-                            .color(theme::TEXT_MUTED),
-                    );
+                    separator(ui);
+                    option_label(ui, "Mode");
+                    eraser_mode_btn(ui, &mut state.eraser_mode, EraserMode::TopItem, "Top Item", "Remove topmost item [default]");
+                    eraser_mode_btn(ui, &mut state.eraser_mode, EraserMode::Selective, "Selective", "Pick which item to delete");
+                    eraser_mode_btn(ui, &mut state.eraser_mode, EraserMode::FullTile, "Full Tile", "Clear entire tile");
                 }
             }
 
             ToolType::Door => {
-                ui.label(egui::RichText::new("Variant").size(10.0).color(theme::TEXT_MUTED));
+                option_label(ui, "Variant");
                 for variant in [DoorVariant::Normal, DoorVariant::Locked, DoorVariant::Quest, DoorVariant::Magic] {
                     let selected = state.door_variant == variant;
                     let btn = egui::Button::new(
@@ -266,58 +185,40 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> ToolbarAction {
                             .color(if selected { egui::Color32::WHITE } else { theme::TEXT_PRIMARY }),
                     )
                     .fill(if selected { theme::ACCENT } else { theme::BG_RAISED })
-                    .corner_radius(egui::CornerRadius::same(2))
-                    .min_size(egui::vec2(0.0, 18.0));
+                    .corner_radius(egui::CornerRadius::same(3))
+                    .min_size(egui::vec2(0.0, SMALL_BTN_H));
                     if ui.add(btn).clicked() {
                         state.door_variant = variant;
                     }
                 }
             }
             ToolType::Spawn => {
-                ui.label(egui::RichText::new("Radius").size(10.0).color(theme::TEXT_MUTED));
+                option_label(ui, "Radius");
                 let mut r = state.spawn_radius as i32;
                 if ui.add(
-                    egui::DragValue::new(&mut r)
-                        .range(1..=15)
-                        .speed(0.1)
+                    egui::DragValue::new(&mut r).range(1..=15).speed(0.1)
                 ).changed() {
                     state.spawn_radius = r.clamp(1, 15) as u8;
                 }
             }
             ToolType::Waypoint => {
-                ui.label(egui::RichText::new("Name").size(10.0).color(theme::TEXT_MUTED));
+                option_label(ui, "Name");
                 ui.add(
                     egui::TextEdit::singleline(&mut state.waypoint_name)
-                        .desired_width(120.0)
+                        .desired_width(140.0)
                 );
             }
             ToolType::Fill => {
-                ui.label(
-                    egui::RichText::new("Click a tile to flood-fill with the selected item")
-                        .size(10.0)
-                        .color(theme::TEXT_MUTED),
-                );
+                hint_label(ui, "Click a tile to flood-fill with the selected brush");
             }
             ToolType::Eyedropper => {
-                ui.label(
-                    egui::RichText::new("Click a tile to pick up its top item")
-                        .size(10.0)
-                        .color(theme::TEXT_MUTED),
-                );
+                hint_label(ui, "Click a tile to pick up its top item as your brush");
             }
             ToolType::Select => {
-                ui.label(
-                    egui::RichText::new("Click and drag to select tiles")
-                        .size(10.0)
-                        .color(theme::TEXT_MUTED),
-                );
+                hint_label(ui, "Click and drag to select a tile region");
             }
             ToolType::Creature => {
-                ui.label(
-                    egui::RichText::new("Click to place creature")
-                        .size(10.0)
-                        .color(theme::TEXT_MUTED),
-                );
+                hint_label(ui, "Click to place a creature from the creatures palette");
             }
         }
     });
@@ -325,76 +226,217 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> ToolbarAction {
     action
 }
 
-fn tool_button(ui: &mut egui::Ui, active: &mut ToolType, tool: ToolType) {
-    let selected = *active == tool;
-    let icon = tool_icon(tool);
-    let label = tool.label();
+// ── Painted vector tool button ─────────────────────────────────
 
-    let btn = egui::Button::new(
-        egui::RichText::new(format!("{} {}", icon, label))
-            .size(11.0)
-            .color(if selected { egui::Color32::WHITE } else { theme::TEXT_PRIMARY }),
-    )
-    .fill(if selected { theme::TOOL_ACTIVE_BG } else { egui::Color32::TRANSPARENT })
-    .stroke(if selected {
+fn icon_tool_button(ui: &mut egui::Ui, active: &mut ToolType, tool: ToolType) {
+    let selected = *active == tool;
+    let icon_char = tool_icon(tool);
+
+    let fill = if selected { theme::TOOL_ACTIVE_BG } else { egui::Color32::TRANSPARENT };
+    let stroke = if selected {
         egui::Stroke::new(1.0, theme::ACCENT_HOVER)
     } else {
         egui::Stroke::NONE
-    })
-    .corner_radius(egui::CornerRadius::same(4))
-    .min_size(egui::vec2(0.0, 26.0));
+    };
 
-    if ui.add(btn)
-        .on_hover_text(format!("{} [{}]", label, tool.hotkey()))
-        .clicked()
-    {
+    // Allocate a square button area
+    let size = egui::vec2(TOOL_BTN_SIZE, TOOL_BTN_SIZE);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+
+    // Background
+    if response.hovered() && !selected {
+        ui.painter().rect_filled(rect, 4.0, theme::BG_RAISED);
+    }
+    if selected {
+        ui.painter().rect_filled(rect, 4.0, fill);
+        ui.painter().rect_stroke(rect, 4.0, stroke, egui::StrokeKind::Outside);
+    }
+
+    // Render Lucide icon
+    let icon_color = if selected {
+        egui::Color32::WHITE
+    } else if response.hovered() {
+        theme::ACCENT
+    } else {
+        theme::TEXT_PRIMARY
+    };
+
+    let galley = ui.painter().layout_no_wrap(
+        icon_char.to_string(),
+        egui::FontId::new(TOOL_ICON_SIZE, egui::FontFamily::Name(icons::FONT_FAMILY.into())),
+        icon_color,
+    );
+    let text_pos = rect.center() - galley.size() / 2.0;
+    ui.painter().galley(text_pos, galley, icon_color);
+
+    // Tooltip
+    response.clone().on_hover_text(format!("{} [{}]", tool.label(), tool.hotkey()));
+
+    if response.clicked() {
         *active = tool;
     }
 }
 
-fn tool_icon(tool: ToolType) -> &'static str {
+/// Map each tool type to its Lucide icon codepoint.
+fn tool_icon(tool: ToolType) -> char {
     match tool {
-        ToolType::Brush => "🖌",
-        ToolType::Eraser => "⌫",
-        ToolType::Fill => "🪣",
-        ToolType::Select => "⬚",
-        ToolType::Eyedropper => "💧",
-        ToolType::Door => "🚪",
-        ToolType::Creature => "🐾",
-        ToolType::Spawn => "⊕",
-        ToolType::Waypoint => "📍",
+        ToolType::Brush => icons::PAINTBRUSH,
+        ToolType::Eraser => icons::ERASER,
+        ToolType::Fill => icons::PAINT_BUCKET,
+        ToolType::Eyedropper => icons::PIPETTE,
+        ToolType::Select => icons::SQUARE_DASHED,
+        ToolType::Door => icons::DOOR_OPEN,
+        ToolType::Creature => icons::PAW_PRINT,
+        ToolType::Spawn => icons::CROSSHAIR,
+        ToolType::Waypoint => icons::MAP_PIN,
     }
 }
 
-fn group_label(ui: &mut egui::Ui, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(8.5)
-            .color(theme::TEXT_MUTED)
-            .strong(),
-    );
-    ui.add_space(2.0);
+// ── Eraser mode toggle button ─────────────────────────────────────
+
+fn eraser_mode_btn(
+    ui: &mut egui::Ui,
+    current: &mut EraserMode,
+    mode: EraserMode,
+    label: &str,
+    tooltip: &str,
+) {
+    let selected = *current == mode;
+    let text_color = if selected { egui::Color32::WHITE } else { theme::TEXT_SECONDARY };
+    let bg = if selected { theme::ERROR } else { theme::BG_RAISED };
+
+    let btn = egui::Button::new(
+        egui::RichText::new(label).size(10.0).color(text_color),
+    )
+    .fill(bg)
+    .corner_radius(egui::CornerRadius::same(3))
+    .min_size(egui::vec2(0.0, SMALL_BTN_H));
+
+    if ui.add(btn).on_hover_text(tooltip).clicked() {
+        *current = mode;
+    }
 }
 
-fn icon_btn(ui: &mut egui::Ui, icon: &str, enabled: bool, tooltip: &str) -> egui::Response {
+// ── Small helpers ─────────────────────────────────────────────────
+
+fn lucide_btn(ui: &mut egui::Ui, icon_char: char, enabled: bool, tooltip: &str) -> egui::Response {
+    let color = if enabled { theme::TEXT_PRIMARY } else { theme::TEXT_MUTED };
     let btn = egui::Button::new(
-        egui::RichText::new(icon)
-            .size(13.0)
-            .color(if enabled { theme::TEXT_PRIMARY } else { theme::TEXT_MUTED }),
+        icons::icon_colored(icon_char, 14.0, color),
     )
-    .min_size(egui::vec2(24.0, 22.0));
+    .min_size(egui::vec2(24.0, TOOL_BTN_SIZE));
     ui.add_enabled(enabled, btn).on_hover_text(tooltip)
 }
 
-/// Thin vertical separator.
-fn thin_separator(ui: &mut egui::Ui) {
+#[allow(dead_code)]
+fn compact_icon_btn(ui: &mut egui::Ui, icon: &str, enabled: bool, tooltip: &str) -> egui::Response {
+    let color = if enabled { theme::TEXT_PRIMARY } else { theme::TEXT_MUTED };
+    let btn = egui::Button::new(
+        egui::RichText::new(icon).size(13.0).color(color),
+    )
+    .min_size(egui::vec2(24.0, TOOL_BTN_SIZE));
+    ui.add_enabled(enabled, btn).on_hover_text(tooltip)
+}
+
+fn separator(ui: &mut egui::Ui) {
+    ui.add_space(3.0);
     let rect = ui.available_rect_before_wrap();
     let x = rect.left();
-    let top = rect.top() + 2.0;
-    let bot = rect.bottom() - 2.0;
+    let top = rect.top() + 4.0;
+    let bot = rect.bottom() - 4.0;
     ui.painter().line_segment(
         [egui::pos2(x, top), egui::pos2(x, bot)],
-        egui::Stroke::new(0.5, theme::BORDER),
+        egui::Stroke::new(1.0, theme::BORDER),
     );
-    ui.add_space(1.0);
+    ui.add_space(4.0);
+}
+
+fn option_label(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(OPTION_LABEL_SIZE)
+            .color(theme::TEXT_MUTED)
+            .strong(),
+    );
+}
+
+fn hint_label(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(OPTION_LABEL_SIZE)
+            .color(theme::TEXT_MUTED)
+            .italics(),
+    );
+}
+
+fn small_btn(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).size(11.0))
+            .min_size(egui::vec2(SMALL_BTN_H, SMALL_BTN_H - 2.0))
+    )
+}
+
+fn preset_btn(ui: &mut egui::Ui, current: &mut u32, preset: u32) {
+    let selected = *current == preset;
+    let btn = egui::Button::new(
+        egui::RichText::new(format!("{}", preset))
+            .size(9.5)
+            .color(if selected { egui::Color32::WHITE } else { theme::TEXT_SECONDARY }),
+    )
+    .fill(if selected { theme::ACCENT } else { theme::BG_RAISED })
+    .corner_radius(egui::CornerRadius::same(2))
+    .min_size(egui::vec2(PRESET_BTN_SIZE, SMALL_BTN_H - 2.0));
+    if ui.add(btn).clicked() {
+        *current = preset;
+    }
+}
+
+fn shape_toggle(ui: &mut egui::Ui, current: &mut BrushShape, shape: BrushShape, icon: &str, tooltip: &str) {
+    let selected = *current == shape;
+    let btn = egui::Button::new(
+        egui::RichText::new(icon)
+            .size(12.0)
+            .color(if selected { egui::Color32::WHITE } else { theme::TEXT_SECONDARY }),
+    )
+    .fill(if selected { theme::ACCENT } else { theme::BG_RAISED })
+    .corner_radius(egui::CornerRadius::same(3))
+    .min_size(egui::vec2(22.0, SMALL_BTN_H));
+    if ui.add(btn).on_hover_text(tooltip).clicked() {
+        *current = shape;
+    }
+}
+
+/// Show active zone brush / house brush markers.
+fn show_active_markers(ui: &mut egui::Ui, state: &mut EditorState) {
+    if let Some(zone) = state.active_zone_flag {
+        let badge = egui::RichText::new(format!(" {} ", zone.label()))
+            .size(9.5)
+            .color(egui::Color32::WHITE)
+            .strong()
+            .background_color(zone.color());
+        ui.label(badge);
+        if ui.add(
+            egui::Button::new(egui::RichText::new("✕").size(9.0))
+                .min_size(egui::vec2(16.0, 16.0))
+        ).on_hover_text("Clear zone brush").clicked() {
+            state.active_zone_flag = None;
+        }
+        separator(ui);
+    }
+
+    if let Some(hid) = state.active_house_id {
+        let badge = egui::RichText::new(format!(" House #{} ", hid))
+            .size(9.5)
+            .color(egui::Color32::WHITE)
+            .strong()
+            .background_color(egui::Color32::from_rgb(120, 80, 200));
+        ui.label(badge);
+        if ui.add(
+            egui::Button::new(egui::RichText::new("✕").size(9.0))
+                .min_size(egui::vec2(16.0, 16.0))
+        ).on_hover_text("Clear house brush").clicked() {
+            state.active_house_id = None;
+        }
+        separator(ui);
+    }
 }

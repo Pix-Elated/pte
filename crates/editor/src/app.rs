@@ -2,7 +2,7 @@
 
 use egui::{Color32, Stroke};
 
-use crate::state::{AssetStatus, EditorMode, EditorState, ToolType};
+use crate::state::{AssetStatus, EditorMode, EditorState, LoadedAssets, LoadingProgress, ToolType, WorkspaceTab};
 
 pub struct MapEditorApp {
     pub state: EditorState,
@@ -44,13 +44,15 @@ impl MapEditorApp {
             .or_else(|| std::env::current_dir().ok());
 
         if let Some(root) = scan_root {
-            tracing::info!("Auto-discover: scanning {}", root.display());
-            let result = crate::asset_scanner::scan_directory(&root, 8);
-            if !result.is_empty() {
-                tracing::info!("Auto-discover: found {} project(s)", result.projects.len());
-                app.state.scanner.scan_root = Some(root);
-                app.state.scanner.scan_result = Some(result);
-            }
+            tracing::info!("Auto-discover: scanning {} (background)", root.display());
+            let (tx, rx) = std::sync::mpsc::channel();
+            app.state.scanner.scan_root = Some(root.clone());
+            app.state.scanner.scanning = true;
+            app.state.scanner.scan_rx = Some(rx);
+            std::thread::spawn(move || {
+                let result = crate::asset_scanner::scan_directory(&root, 8);
+                let _ = tx.send(result);
+            });
         }
 
         app
@@ -58,18 +60,112 @@ impl MapEditorApp {
 
     /// Process any pending async-like work (file loads triggered from UI).
     fn process_pending(&mut self, ctx: &egui::Context) {
-        // Asset loading
-        if let Some(dir) = self.state.pending_asset_load.take() {
-            self.load_assets_from_dir(&dir, ctx);
+        // Poll background scanner (only for auto-discover, not when scanner UI is handling it)
+        if !self.state.scanner.open {
+            if let Some(ref rx) = self.state.scanner.scan_rx {
+                match rx.try_recv() {
+                    Ok(result) => {
+                        if !result.is_empty() {
+                            tracing::info!("Scanner found {} project(s)", result.projects.len());
+                            // If we have a pending map load but no assets, auto-trigger load
+                            if self.state.pending_map_load.is_some() && !self.state.assets_ready() {
+                                if let Some(project) = result.projects.first() {
+                                    self.state.pending_asset_load = Some(project.catalog_dir.clone());
+                                }
+                            }
+                        }
+                        self.state.scanner.scan_result = Some(result);
+                        self.state.scanner.scanning = false;
+                        self.state.scanner.scan_rx = None;
+                        self.state.scanner.expanded_project = None;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        ctx.request_repaint();
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.state.scanner.scanning = false;
+                        self.state.scanner.scan_rx = None;
+                    }
+                }
+            }
         }
 
-        // Map loading
-        if let Some(path) = self.state.pending_map_load.take() {
+        // Asset + map loading — kick off unified background thread
+        if let Some(dir) = self.state.pending_asset_load.take() {
+            let map_path = self.state.pending_map_load.take();
             let custom_maps = std::mem::take(&mut self.state.pending_custom_maps);
-            self.load_map(&path);
-            // Merge custom overlay maps into the loaded main map
-            if !custom_maps.is_empty() && self.state.map_data.is_some() {
-                self.merge_overlay_maps(&custom_maps);
+            self.load_project_async(&dir, map_path, custom_maps, ctx);
+        }
+
+        // Poll background loader
+        if let Some(ref rx) = self.state.loader.asset_rx {
+            match rx.try_recv() {
+                Ok(Ok(assets)) => {
+                    self.finish_project_load(assets, ctx);
+                }
+                Ok(Err(e)) => {
+                    self.state.asset_status = AssetStatus::Error(e);
+                    self.state.loader.asset_rx = None;
+                    self.state.loader.progress = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Still loading — update progress display from shared state
+                    if let Some(ref progress) = self.state.loader.progress {
+                        if let Ok(p) = progress.lock() {
+                            self.state.asset_status = AssetStatus::Loading {
+                                progress: p.progress,
+                                message: p.message.clone(),
+                            };
+                        }
+                    }
+                    ctx.request_repaint();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.state.asset_status = AssetStatus::Error("Loading thread crashed".to_string());
+                    self.state.loader.asset_rx = None;
+                    self.state.loader.progress = None;
+                }
+            }
+        }
+
+        // Standalone map loading (without asset reload, e.g. from map switcher)
+        if let Some(path) = self.state.pending_map_load.take() {
+            if self.state.assets_ready() {
+                let custom_maps = std::mem::take(&mut self.state.pending_custom_maps);
+                self.load_map_async(&path, custom_maps);
+            } else {
+                self.state.pending_map_load = Some(path);
+            }
+        }
+
+        // Poll background map loader
+        if let Some(ref rx) = self.state.loader.map_rx {
+            match rx.try_recv() {
+                Ok(Ok((map, map_path, spawns))) => {
+                    self.apply_loaded_map(map, map_path, spawns);
+                    self.state.loader.map_rx = None;
+                    self.state.loader.map_progress = None;
+                    self.state.map_loading = false;
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Failed to load map: {e}");
+                    self.state.loader.map_rx = None;
+                    self.state.loader.map_progress = None;
+                    self.state.map_loading = false;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    if let Some(ref progress) = self.state.loader.map_progress {
+                        if let Ok(p) = progress.lock() {
+                            self.state.map_loading_message = p.message.clone();
+                        }
+                    }
+                    ctx.request_repaint();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.state.loader.map_rx = None;
+                    self.state.loader.map_progress = None;
+                    self.state.map_loading = false;
+                }
             }
         }
 
@@ -107,194 +203,330 @@ impl MapEditorApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
     }
 
-    fn load_assets_from_dir(&mut self, dir: &std::path::Path, ctx: &egui::Context) {
+    /// Load entire project (assets + map + overlays) on a background thread.
+    fn load_project_async(
+        &mut self,
+        dir: &std::path::Path,
+        map_path: Option<std::path::PathBuf>,
+        custom_maps: Vec<std::path::PathBuf>,
+        _ctx: &egui::Context,
+    ) {
+        let dir = dir.to_path_buf();
+        let progress = std::sync::Arc::new(std::sync::Mutex::new(LoadingProgress {
+            progress: 0.0,
+            message: "Parsing catalog…".to_string(),
+            stage: crate::state::LoadingStage::Catalog,
+        }));
+
         self.state.asset_status = AssetStatus::Loading {
             progress: 0.0,
-            message: "Parsing catalog...".to_string(),
+            message: "Parsing catalog…".to_string(),
         };
+        self.state.loader.progress = Some(progress.clone());
 
-        let catalog_path = dir.join("catalog-content.json");
-        let catalog = match pte_assets::load_catalog(&catalog_path) {
-            Ok(c) => c,
-            Err(e) => {
-                self.state.asset_status = AssetStatus::Error(format!("Catalog: {e:#}"));
-                return;
-            }
-        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.state.loader.asset_rx = Some(rx);
 
-        // Load appearances if available
-        if let Some(ref app_file) = catalog.appearances_file {
-            let app_path = dir.join(app_file);
-            match pte_appearances::load_appearances(&app_path) {
-                Ok(apps) => {
-                    tracing::info!("Loaded {} appearances", apps.total_count());
-                    self.state.appearances = Some(apps);
-                }
+        std::thread::spawn(move || {
+            // ── Stage 1: Catalog ──
+            let catalog_path = dir.join("catalog-content.json");
+            let catalog = match pte_assets::load_catalog(&catalog_path) {
+                Ok(c) => c,
                 Err(e) => {
-                    tracing::warn!("Failed to load appearances: {e:#}");
+                    let _ = tx.send(Err(format!("Catalog: {e:#}")));
+                    return;
                 }
+            };
+
+            // ── Stage 2: Appearances ──
+            {
+                let mut p = progress.lock().unwrap();
+                p.progress = 0.03;
+                p.message = "Loading appearances…".to_string();
+                p.stage = crate::state::LoadingStage::Appearances;
             }
-        }
+            let appearances = if let Some(ref app_file) = catalog.appearances_file {
+                let app_path = dir.join(app_file);
+                match pte_appearances::load_appearances(&app_path) {
+                    Ok(apps) => {
+                        tracing::info!("Loaded {} appearances", apps.total_count());
+                        Some(apps)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to load appearances: {e:#}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
 
-        // Load sprite sheets in parallel
-        self.state.asset_status = AssetStatus::Loading {
-            progress: 0.1,
-            message: "Decompressing sprite sheets...".to_string(),
-        };
+            // ── Stage 3: Sprite sheets (parallel) ──
+            {
+                let mut p = progress.lock().unwrap();
+                p.progress = 0.06;
+                p.message = "Decompressing sprite sheets…".to_string();
+                p.stage = crate::state::LoadingStage::SpriteSheets;
+            }
 
-        let sheets = pte_assets::load_all_sheets(dir, &catalog, |done, total| {
-            tracing::debug!("Sheet {}/{}", done, total);
+            let total_sheets = catalog.sprite_sheets.len();
+            let progress_clone = progress.clone();
+            let sheets = pte_assets::load_all_sheets(&dir, &catalog, move |done, total| {
+                let frac = 0.06 + 0.54 * (done as f32 / total as f32);
+                if let Ok(mut p) = progress_clone.lock() {
+                    p.progress = frac;
+                    p.message = format!("Decompressing sprite sheets… ({}/{})", done, total);
+                }
+            });
+            tracing::info!("Loaded {} sprite sheets ({} total)", sheets.len(), total_sheets);
+
+            // ── Stage 4: Parse main map ──
+            let (map, map_path_final, spawns) = if let Some(ref mp) = map_path {
+                {
+                    let mut p = progress.lock().unwrap();
+                    p.progress = 0.62;
+                    p.message = "Parsing map…".to_string();
+                    p.stage = crate::state::LoadingStage::MapParse;
+                }
+                match pte_otbm::parse_otbm(mp) {
+                    Ok(mut map) => {
+                        tracing::info!("Loaded map: {} tiles", map.tile_count());
+
+                        // ── Stage 5: Merge overlays ──
+                        {
+                            let mut p = progress.lock().unwrap();
+                            p.progress = 0.72;
+                            p.message = if custom_maps.is_empty() {
+                                "No overlays".to_string()
+                            } else {
+                                format!("Merging {} overlay maps…", custom_maps.len())
+                            };
+                            p.stage = crate::state::LoadingStage::Overlays;
+                        }
+                        if !custom_maps.is_empty() {
+                            for (i, overlay_path) in custom_maps.iter().enumerate() {
+                                match pte_otbm::parse_otbm(overlay_path) {
+                                    Ok(overlay) => {
+                                        for chunk in overlay.chunks.values() {
+                                            for tile in chunk.values() {
+                                                map.set_tile(tile.clone());
+                                            }
+                                        }
+                                        for town in &overlay.towns {
+                                            if !map.towns.iter().any(|t| t.id == town.id) {
+                                                map.towns.push(town.clone());
+                                            }
+                                        }
+                                        for wp in &overlay.waypoints {
+                                            if !map.waypoints.iter().any(|w| w.name == wp.name) {
+                                                map.waypoints.push(wp.clone());
+                                            }
+                                        }
+                                        for house in &overlay.houses {
+                                            if !map.houses.iter().any(|h| h.id == house.id) {
+                                                map.houses.push(house.clone());
+                                            }
+                                        }
+                                        tracing::info!("Merged overlay {}", overlay_path.display());
+                                    }
+                                    Err(e) => tracing::warn!("Failed overlay {}: {e:#}", overlay_path.display()),
+                                }
+                                let frac = 0.72 + 0.08 * ((i + 1) as f32 / custom_maps.len() as f32);
+                                if let Ok(mut p) = progress.lock() {
+                                    p.progress = frac;
+                                    p.message = format!("Merging overlays… ({}/{})", i + 1, custom_maps.len());
+                                }
+                            }
+                        }
+
+                        // ── Stage 6: Spawns ──
+                        {
+                            let mut p = progress.lock().unwrap();
+                            p.progress = 0.82;
+                            p.message = "Loading spawns…".to_string();
+                            p.stage = crate::state::LoadingStage::Spawns;
+                        }
+                        let spawn_file = if map.spawn_file.is_empty() {
+                            "spawn.xml".to_string()
+                        } else {
+                            map.spawn_file.clone()
+                        };
+                        let spawn_path = mp.with_file_name(&spawn_file);
+                        let loaded_spawns = if spawn_path.exists() {
+                            match crate::spawn_xml::read_spawns(&spawn_path) {
+                                Ok(s) => {
+                                    tracing::info!("Loaded {} spawns", s.len());
+                                    s
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to load spawns: {e:#}");
+                                    Vec::new()
+                                }
+                            }
+                        } else {
+                            Vec::new()
+                        };
+
+                        (Some(map), Some(mp.clone()), loaded_spawns)
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to load map: {e:#}");
+                        (None, None, Vec::new())
+                    }
+                }
+            } else {
+                (None, None, Vec::new())
+            };
+
+            // ── Done ──
+            {
+                let mut p = progress.lock().unwrap();
+                p.progress = 0.95;
+                p.message = "Finalizing…".to_string();
+                p.stage = crate::state::LoadingStage::Finalizing;
+            }
+
+            let _ = tx.send(Ok(LoadedAssets {
+                catalog,
+                appearances,
+                sheets,
+                asset_dir: dir,
+                map,
+                map_path: map_path_final,
+                spawns,
+            }));
         });
+    }
 
-        tracing::info!("Loaded {} sprite sheets", sheets.len());
+    /// Apply loaded project data to state (main-thread, lightweight — just moves).
+    fn finish_project_load(&mut self, assets: LoadedAssets, _ctx: &egui::Context) {
+        self.state.appearances = assets.appearances;
+        self.state.sprite_sheets = assets.sheets;
+        self.state.sprite_textures.clear(); // Clear stale texture cache
+        self.state.catalog = Some(assets.catalog);
+        self.state.asset_dir = Some(assets.asset_dir);
+        self.state.loader.progress = None;
+        self.state.loader.asset_rx = None;
 
-        // Upload sprite textures to GPU
-        self.state.asset_status = AssetStatus::Loading {
-            progress: 0.8,
-            message: "Uploading textures...".to_string(),
-        };
-
-        for sheet in sheets.values() {
-            for sid in sheet.first_sprite_id..=sheet.last_sprite_id {
-                if let Some(pixels) = sheet.get_sprite(sid) {
-                    let (w, h) = sheet.sprite_dimensions();
-                    let tex = crate::sprite_picker::upload_sprite_texture(ctx, sid, &pixels, w, h);
-                    self.state.sprite_textures.insert(sid, tex);
-                }
-            }
+        // Apply map if loaded
+        if let Some(map) = assets.map {
+            self.apply_loaded_map(map, assets.map_path.unwrap_or_default(), assets.spawns);
         }
 
-        self.state.sprite_sheets = sheets;
-        self.state.catalog = Some(catalog);
-        self.state.asset_dir = Some(dir.to_path_buf());
         self.state.asset_status = AssetStatus::Ready;
-    }
+        tracing::info!("Project ready — all assets loaded on background thread");
 
-    fn load_map(&mut self, path: &std::path::Path) {
-        match pte_otbm::parse_otbm(path) {
-            Ok(map) => {
-                tracing::info!("Loaded map: {} tiles", map.tile_count());
-                self.state.map_data = Some(map);
-                self.state.map_path = Some(path.to_path_buf());
-
-                // Reset dirty tracking for freshly loaded map
-                self.state.save_version = 0;
-                self.state.undo_stack.clear();
-                self.state.undo_cursor = 0;
-
-                // Load spawns from spawn.xml next to the map
-                let spawn_file = if self.state.map_data.as_ref().map_or(true, |m| m.spawn_file.is_empty()) {
-                    "spawn.xml".to_string()
-                } else {
-                    self.state.map_data.as_ref().unwrap().spawn_file.clone()
-                };
-                let spawn_path = path.with_file_name(&spawn_file);
-                if spawn_path.exists() {
-                    match crate::spawn_xml::read_spawns(&spawn_path) {
-                        Ok(spawns) => {
-                            tracing::info!("Loaded {} spawns from {}", spawns.len(), spawn_path.display());
-                            self.state.spawns = spawns;
-                        }
-                        Err(e) => tracing::warn!("Failed to load spawns: {e:#}"),
-                    }
-                } else {
-                    self.state.spawns.clear();
-                }
-                crate::creature_palette::rebuild_creature_list(&mut self.state);
-
-                // Add to recent files (deduplicated, max 10)
-                let pb = path.to_path_buf();
-                self.state.recent_files.retain(|p| p != &pb);
-                self.state.recent_files.insert(0, pb);
-                self.state.recent_files.truncate(10);
-                self.state.last_autosave = std::time::Instant::now();
-                self.state.update_z_range();
-                tracing::info!(
-                    "Detected z range: {}–{}, surface: {}",
-                    self.state.z_min,
-                    self.state.z_max,
-                    self.state.z_surface
-                );
-                // Center the camera on the map
-                self.state.camera.z_level = self.state.z_surface;
-                if let Some(ref map) = self.state.map_data {
-                    if let Some((min_x, min_y, max_x, max_y)) = map.xy_extents(self.state.z_surface) {
-                        let cx = (min_x as f64 + max_x as f64) / 2.0;
-                        let cy = (min_y as f64 + max_y as f64) / 2.0;
-                        self.state.camera.center_x = cx;
-                        self.state.camera.center_y = cy;
-                        tracing::info!(
-                            "Centered camera on ({}, {}) — tile extent x={}..{} y={}..{}",
-                            cx, cy, min_x, max_x, min_y, max_y
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to load map: {e:#}");
-                // Show error somewhere visible
-            }
+        if self.state.mode == EditorMode::Welcome {
+            self.state.mode = EditorMode::MapEditor;
         }
     }
 
-    /// Merge overlay .otbm files (custom, quest, etc.) into the currently loaded map.
-    /// Overlay tiles overwrite existing tiles at matching positions.
-    fn merge_overlay_maps(&mut self, overlay_paths: &[std::path::PathBuf]) {
-        let Some(ref mut map) = self.state.map_data else { return };
+    /// Load a map asynchronously (for map switching when assets are already loaded).
+    fn load_map_async(&mut self, path: &std::path::Path, custom_maps: Vec<std::path::PathBuf>) {
+        let path = path.to_path_buf();
+        let progress = std::sync::Arc::new(std::sync::Mutex::new(LoadingProgress {
+            progress: 0.0,
+            message: "Parsing map…".to_string(),
+            stage: crate::state::LoadingStage::MapParse,
+        }));
+        self.state.map_loading = true;
+        self.state.map_loading_message = "Parsing map…".to_string();
+        self.state.loader.map_progress = Some(progress.clone());
 
-        let mut total_merged = 0usize;
-        for path in overlay_paths {
-            match pte_otbm::parse_otbm(path) {
-                Ok(overlay) => {
-                    let mut count = 0;
-                    // Merge tiles: overlay overwrites existing
-                    for chunk in overlay.chunks.values() {
-                        for tile in chunk.values() {
-                            map.set_tile(tile.clone());
-                            count += 1;
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.state.loader.map_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            match pte_otbm::parse_otbm(&path) {
+                Ok(mut map) => {
+                    // Merge overlays
+                    for overlay_path in &custom_maps {
+                        if let Ok(overlay) = pte_otbm::parse_otbm(overlay_path) {
+                            for chunk in overlay.chunks.values() {
+                                for tile in chunk.values() {
+                                    map.set_tile(tile.clone());
+                                }
+                            }
+                            for town in &overlay.towns {
+                                if !map.towns.iter().any(|t| t.id == town.id) {
+                                    map.towns.push(town.clone());
+                                }
+                            }
+                            for wp in &overlay.waypoints {
+                                if !map.waypoints.iter().any(|w| w.name == wp.name) {
+                                    map.waypoints.push(wp.clone());
+                                }
+                            }
+                            for house in &overlay.houses {
+                                if !map.houses.iter().any(|h| h.id == house.id) {
+                                    map.houses.push(house.clone());
+                                }
+                            }
                         }
                     }
-                    // Merge towns (deduplicate by id)
-                    for town in &overlay.towns {
-                        if !map.towns.iter().any(|t| t.id == town.id) {
-                            map.towns.push(town.clone());
-                        }
-                    }
-                    // Merge waypoints (deduplicate by name)
-                    for wp in &overlay.waypoints {
-                        if !map.waypoints.iter().any(|w| w.name == wp.name) {
-                            map.waypoints.push(wp.clone());
-                        }
-                    }
-                    // Merge houses (deduplicate by id)
-                    for house in &overlay.houses {
-                        if !map.houses.iter().any(|h| h.id == house.id) {
-                            map.houses.push(house.clone());
-                        }
-                    }
-                    tracing::info!(
-                        "Merged overlay {} — {} tiles",
-                        path.file_name().and_then(|n| n.to_str()).unwrap_or("?"),
-                        count,
-                    );
-                    total_merged += count;
+
+                    // Load spawns
+                    let spawn_file = if map.spawn_file.is_empty() {
+                        "spawn.xml".to_string()
+                    } else {
+                        map.spawn_file.clone()
+                    };
+                    let spawn_path = path.with_file_name(&spawn_file);
+                    let spawns = if spawn_path.exists() {
+                        crate::spawn_xml::read_spawns(&spawn_path).unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+
+                    let _ = tx.send(Ok((map, path, spawns)));
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to load overlay {}: {e:#}",
-                        path.display(),
-                    );
+                    let _ = tx.send(Err(format!("Failed to load map: {e:#}")));
                 }
             }
-        }
+        });
+    }
 
-        if total_merged > 0 {
-            tracing::info!(
-                "Merged {} overlay map(s), {} total tiles applied",
-                overlay_paths.len(),
-                total_merged,
-            );
-            self.state.update_z_range();
+    /// Apply a loaded map + spawns to state (lightweight main-thread work).
+    fn apply_loaded_map(
+        &mut self,
+        map: pte_otbm::MapData,
+        map_path: std::path::PathBuf,
+        spawns: Vec<crate::spawn_xml::Spawn>,
+    ) {
+        tracing::info!("Applying map: {} tiles", map.tile_count());
+        self.state.map_data = Some(map);
+        self.state.map_path = Some(map_path.clone());
+        self.state.spawns = spawns;
+
+        // Reset dirty tracking
+        self.state.save_version = 0;
+        self.state.undo_stack.clear();
+        self.state.undo_cursor = 0;
+
+        crate::creature_palette::rebuild_creature_list(&mut self.state);
+
+        // Recent files
+        self.state.recent_files.retain(|p| p != &map_path);
+        self.state.recent_files.insert(0, map_path);
+        self.state.recent_files.truncate(10);
+        self.state.last_autosave = std::time::Instant::now();
+        self.state.update_z_range();
+
+        tracing::info!(
+            "Z range: {}–{}, surface: {}",
+            self.state.z_min, self.state.z_max, self.state.z_surface
+        );
+
+        // Center camera
+        self.state.camera.z_level = self.state.z_surface;
+        if let Some(ref map) = self.state.map_data {
+            if let Some((min_x, min_y, max_x, max_y)) = map.xy_extents(self.state.z_surface) {
+                let cx = (min_x as f64 + max_x as f64) / 2.0;
+                let cy = (min_y as f64 + max_y as f64) / 2.0;
+                self.state.camera.center_x = cx;
+                self.state.camera.center_y = cy;
+            }
         }
     }
 
@@ -496,6 +728,13 @@ impl MapEditorApp {
                     ui.close_menu();
                 }
 
+                if self.state.active_project.is_some() {
+                    if ui.button("Switch Map...").clicked() {
+                        self.state.show_map_switcher = true;
+                        ui.close_menu();
+                    }
+                }
+
                 // Recent files
                 if !self.state.recent_files.is_empty() {
                     ui.menu_button("Recent Maps", |ui| {
@@ -548,6 +787,7 @@ impl MapEditorApp {
 
                 if ui.button("Back to Launcher").clicked() {
                     self.state.mode = EditorMode::Welcome;
+                    self.state.active_tab = WorkspaceTab::MapEditor;
                     ui.close_menu();
                 }
 
@@ -994,51 +1234,92 @@ fn separator_line(ui: &mut egui::Ui) {
     ui.add_space(1.0);
 }
 
-/// A clickable card for the welcome screen mode selector.
-fn mode_card(ui: &mut egui::Ui, title: &str, subtitle: &str, width: f32) -> bool {
-    use crate::theme;
-    let height = 72.0;
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(width, height),
-        egui::Sense::click(),
-    );
+/// Prominent workspace tab bar — renders as a top panel.
+fn show_workspace_tabs(ctx: &egui::Context, active: &mut WorkspaceTab) {
+    egui::TopBottomPanel::top("workspace_tabs")
+        .frame(egui::Frame::NONE
+            .fill(crate::theme::BG_PANEL)
+            .inner_margin(egui::Margin::symmetric(0, 0)))
+        .exact_height(32.0)
+        .show(ctx, |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
 
-    let hovered = response.hovered();
-    let bg = if hovered { theme::BG_RAISED } else { theme::BG_SURFACE };
-    let border = if hovered { theme::ACCENT_HOVER } else { theme::BORDER };
+                let tabs = [
+                    (WorkspaceTab::MapEditor, "MAP EDITOR"),
+                    (WorkspaceTab::SpriteViewer, "SPRITE VIEWER"),
+                ];
 
-    ui.painter().rect(
-        rect,
-        egui::CornerRadius::same(6),
-        bg,
-        Stroke::new(if hovered { 1.5 } else { 0.5 }, border),
-        egui::StrokeKind::Outside,
-    );
+                for (tab, label) in &tabs {
+                    let selected = *active == *tab;
 
-    let title_pos = rect.left_top() + egui::vec2(16.0, 20.0);
-    ui.painter().text(
-        title_pos,
-        egui::Align2::LEFT_TOP,
-        title,
-        egui::FontId::proportional(15.0),
-        if hovered { Color32::WHITE } else { theme::TEXT_PRIMARY },
-    );
+                    // Draw tab button
+                    let text_color = if selected {
+                        egui::Color32::WHITE
+                    } else {
+                        crate::theme::TEXT_MUTED
+                    };
+                    let bg = if selected {
+                        crate::theme::BG_SURFACE
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    };
 
-    let sub_pos = rect.left_top() + egui::vec2(16.0, 42.0);
-    ui.painter().text(
-        sub_pos,
-        egui::Align2::LEFT_TOP,
-        subtitle,
-        egui::FontId::proportional(11.0),
-        theme::TEXT_MUTED,
-    );
+                    let btn = egui::Button::new(
+                        egui::RichText::new(*label)
+                            .size(11.5)
+                            .color(text_color)
+                            .strong(),
+                    )
+                    .fill(bg)
+                    .stroke(egui::Stroke::NONE)
+                    .corner_radius(egui::CornerRadius::ZERO)
+                    .min_size(egui::vec2(160.0, 32.0));
 
-    response.clicked()
+                    let resp = ui.add(btn);
+
+                    // Active accent underline
+                    if selected {
+                        let r = resp.rect;
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_max(
+                                egui::pos2(r.left(), r.bottom() - 3.0),
+                                r.right_bottom(),
+                            ),
+                            0.0,
+                            crate::theme::ACCENT,
+                        );
+                    }
+
+                    if resp.clicked() {
+                        *active = *tab;
+                    }
+                }
+
+                // Separator line under the tab bar
+                let full_rect = ui.max_rect();
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(full_rect.left(), full_rect.bottom()),
+                        egui::pos2(full_rect.right(), full_rect.bottom()),
+                    ],
+                    egui::Stroke::new(1.0, crate::theme::BORDER),
+                );
+            });
+        });
 }
 
 impl eframe::App for MapEditorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.process_pending(ctx);
+
+        // Texture cache eviction (once per frame)
+        self.state.evict_textures();
+
+        // Auto-updater: start check if not already, poll, show UI
+        crate::updater::start_update_check(&mut self.state.updater);
+        crate::updater::poll(&mut self.state.updater);
+        crate::updater::show_ui(ctx, &mut self.state.updater);
 
         // Handle close confirmation for unsaved changes
         if ctx.input(|i| i.viewport().close_requested()) {
@@ -1100,23 +1381,85 @@ impl eframe::App for MapEditorApp {
 
         // Show loading overlay if assets are loading
         if let AssetStatus::Loading { ref message, progress } = self.state.asset_status {
+            // Request continuous repaints so stage transitions are visible
+            ctx.request_repaint();
+
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(crate::theme::BG_BASE))
                 .show(ctx, |ui| {
-                    ui.add_space(ui.available_height() * 0.35);
+                    ui.add_space(ui.available_height() * 0.30);
+                    ui.vertical_centered(|ui| {
+                        // Title
+                        ui.label(
+                            egui::RichText::new("Loading Project")
+                                .size(18.0)
+                                .color(crate::theme::TEXT_PRIMARY)
+                                .strong(),
+                        );
+                        ui.add_space(16.0);
+
+                        // Stage indicators
+                        let stage = self.state.loader.progress.as_ref().and_then(|p| {
+                            p.lock().ok().map(|p| p.stage)
+                        });
+                        let stages = [
+                            (crate::state::LoadingStage::Catalog, "Catalog"),
+                            (crate::state::LoadingStage::Appearances, "Appearances"),
+                            (crate::state::LoadingStage::SpriteSheets, "Sprites"),
+                            (crate::state::LoadingStage::MapParse, "Map"),
+                            (crate::state::LoadingStage::Overlays, "Overlays"),
+                            (crate::state::LoadingStage::Spawns, "Spawns"),
+                            (crate::state::LoadingStage::Finalizing, "Finalizing"),
+                        ];
+                        ui.horizontal(|ui| {
+                            ui.add_space((ui.available_width() - 380.0).max(0.0) / 2.0);
+                            for (s, label) in &stages {
+                                let (icon, color) = match stage {
+                                    Some(current) if current == *s => ("⏳", crate::theme::ACCENT),
+                                    Some(current) if (current as u8) > (*s as u8) => ("✓", crate::theme::SUCCESS),
+                                    _ => ("○", crate::theme::TEXT_MUTED),
+                                };
+                                ui.label(
+                                    egui::RichText::new(format!("{} {}", icon, label))
+                                        .size(10.0)
+                                        .color(color),
+                                );
+                            }
+                        });
+                        ui.add_space(12.0);
+
+                        // Current message
+                        ui.label(
+                            egui::RichText::new(message)
+                                .size(13.0)
+                                .color(crate::theme::TEXT_SECONDARY),
+                        );
+                        ui.add_space(8.0);
+
+                        // Progress bar
+                        ui.add(
+                            egui::ProgressBar::new(progress)
+                                .animate(true)
+                                .desired_width(300.0),
+                        );
+                    });
+                });
+            return;
+        }
+
+        // Show map loading overlay (standalone map switch)
+        if self.state.map_loading {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(crate::theme::BG_BASE))
+                .show(ctx, |ui| {
+                    ui.add_space(ui.available_height() * 0.38);
                     ui.vertical_centered(|ui| {
                         ui.spinner();
                         ui.add_space(12.0);
                         ui.label(
-                            egui::RichText::new(message)
+                            egui::RichText::new(&self.state.map_loading_message)
                                 .size(14.0)
                                 .color(crate::theme::TEXT_SECONDARY),
-                        );
-                        ui.add_space(8.0);
-                        ui.add(
-                            egui::ProgressBar::new(progress)
-                                .animate(true)
-                                .desired_width(260.0),
                         );
                     });
                 });
@@ -1125,17 +1468,45 @@ impl eframe::App for MapEditorApp {
 
         // Dispatch to the active mode
         match self.state.mode {
-            EditorMode::Welcome => self.show_welcome(ctx),
-            EditorMode::MapEditor => self.show_map_editor(ctx),
-            EditorMode::SpriteViewer => self.show_sprite_viewer(ctx),
+            EditorMode::Welcome => {
+                self.show_welcome(ctx);
+                // New project wizard overlay
+                crate::new_project::show(ctx, &mut self.state.new_project_wizard);
+                // Handle wizard completion: trigger project scan
+                if !self.state.new_project_wizard.open {
+                    if let Some(path) = self.state.new_project_wizard.take_result_path() {
+                        // Scan the newly created project
+                        self.state.scanner.scan_root = Some(path.clone());
+                        self.state.scanner.scanning = true;
+                        self.state.scanner.scan_result = None;
+                        self.state.scanner.expanded_project = None;
+                        self.state.scanner.open = true;
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        self.state.scanner.scan_rx = Some(rx);
+                        std::thread::spawn(move || {
+                            let result = crate::asset_scanner::scan_directory(&path, 8);
+                            let _ = tx.send(result);
+                        });
+                    }
+                }
+            }
+            EditorMode::MapEditor => {
+                // Dispatch to active tab — tab bar is rendered inside each view
+                // after the menu bar so it sits below File/Edit/View/Map
+                match self.state.active_tab {
+                    WorkspaceTab::MapEditor => self.show_map_editor(ctx),
+                    WorkspaceTab::SpriteViewer => self.show_sprite_viewer(ctx),
+                }
+            }
         }
 
         // Asset scanner dialog (can be opened from any mode)
         match crate::asset_scanner::show(ctx, &mut self.state.scanner) {
-            crate::asset_scanner::ScannerAction::LoadProject { asset_dir, main_map, custom_maps } => {
+            crate::asset_scanner::ScannerAction::LoadProject { asset_dir, main_map, custom_maps, project } => {
                 self.state.pending_asset_load = Some(asset_dir);
                 self.state.pending_map_load = Some(main_map);
                 self.state.pending_custom_maps = custom_maps;
+                self.state.active_project = Some(project);
             }
             crate::asset_scanner::ScannerAction::None => {}
         }
@@ -1196,11 +1567,17 @@ impl MapEditorApp {
                             .set_title("Select OT Project Root")
                             .pick_folder()
                         {
-                            let result = crate::asset_scanner::scan_directory(&dir, 8);
-                            self.state.scanner.scan_root = Some(dir);
-                            self.state.scanner.scan_result = Some(result);
+                            self.state.scanner.scan_root = Some(dir.clone());
+                            self.state.scanner.scanning = true;
+                            self.state.scanner.scan_result = None;
                             self.state.scanner.expanded_project = None;
                             self.state.scanner.open = true;
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            self.state.scanner.scan_rx = Some(rx);
+                            std::thread::spawn(move || {
+                                let result = crate::asset_scanner::scan_directory(&dir, 8);
+                                let _ = tx.send(result);
+                            });
                         }
                     }
 
@@ -1210,6 +1587,45 @@ impl MapEditorApp {
                             .size(10.5)
                             .color(theme::TEXT_MUTED),
                     );
+
+                    ui.add_space(12.0);
+
+                    // ── Secondary action: New Project ──
+                    let new_btn = egui::Button::new(
+                        egui::RichText::new("✨  New Project…")
+                            .size(14.0)
+                            .color(theme::TEXT_PRIMARY),
+                    )
+                    .fill(theme::BG_SURFACE)
+                    .stroke(Stroke::new(1.0, theme::BORDER))
+                    .corner_radius(egui::CornerRadius::same(6))
+                    .min_size(egui::vec2(240.0, 36.0));
+
+                    if ui.add(new_btn).clicked() {
+                        self.state.new_project_wizard = crate::new_project::NewProjectWizard::default();
+                        self.state.new_project_wizard.open = true;
+                    }
+
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new("Create a fresh project with blank assets from scratch")
+                            .size(10.5)
+                            .color(theme::TEXT_MUTED),
+                    );
+
+                    // ── Scanning indicator ──
+                    if self.state.scanner.scanning {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space((ui.available_width() - 180.0).max(0.0) / 2.0);
+                            ui.spinner();
+                            ui.label(
+                                egui::RichText::new("Scanning for projects…")
+                                    .size(11.0)
+                                    .color(theme::TEXT_SECONDARY),
+                            );
+                        });
+                    }
 
                     // ── Error display ──
                     if let AssetStatus::Error(ref msg) = self.state.asset_status {
@@ -1274,59 +1690,38 @@ impl MapEditorApp {
                             if self.state.assets_ready() {
                                 self.state.pending_map_load = Some(path);
                             } else {
-                                // Try to auto-discover assets from the map file's directory tree
+                                // Auto-discover assets from the map directory tree (async)
+                                let map_path = path.clone();
                                 if let Some(parent) = path.parent() {
-                                    let result = crate::asset_scanner::scan_directory(parent, 6);
-                                    if let Some(project) = result.projects.first() {
-                                        self.state.pending_asset_load = Some(project.catalog_dir.clone());
-                                    }
+                                    let parent = parent.to_path_buf();
+                                    self.state.pending_map_load = Some(map_path);
+                                    self.state.asset_status = AssetStatus::Loading {
+                                        progress: 0.0,
+                                        message: "Scanning for assets…".to_string(),
+                                    };
+                                    // Scan in background, then load_project_async will pick it up
+                                    let (tx, rx) = std::sync::mpsc::channel();
+                                    self.state.scanner.scan_rx = Some(rx);
+                                    self.state.scanner.scanning = true;
+                                    std::thread::spawn(move || {
+                                        let result = crate::asset_scanner::scan_directory(&parent, 6);
+                                        let _ = tx.send(result);
+                                    });
                                 }
-                                self.state.pending_map_load = Some(path);
                             }
                         }
                     }
 
-                    // ── If assets are loaded, show mode selection ──
+                    // ── If assets are loaded, go straight to the editor ──
                     if self.state.assets_ready() {
-                        ui.add_space(28.0);
-
-                        let rect = ui.available_rect_before_wrap();
-                        let center_x = rect.center().x;
-                        ui.painter().line_segment(
-                            [
-                                egui::pos2(center_x - 120.0, rect.top()),
-                                egui::pos2(center_x + 120.0, rect.top()),
-                            ],
-                            Stroke::new(0.5, theme::BORDER),
-                        );
                         ui.add_space(16.0);
-
                         ui.label(
-                            egui::RichText::new("Choose a workspace")
-                                .size(13.0)
+                            egui::RichText::new("Assets loaded — opening editor...")
+                                .size(12.0)
                                 .color(theme::TEXT_SECONDARY),
                         );
-                        ui.add_space(12.0);
-
-                        ui.horizontal(|ui| {
-                            let card_w = 200.0;
-                            let gap = 16.0;
-                            let total = card_w * 2.0 + gap;
-                            let avail_w = ui.available_width();
-                            if avail_w > total {
-                                ui.add_space((avail_w - total) / 2.0);
-                            }
-
-                            if mode_card(ui, "Map Editor", "Edit .otbm map files", card_w) {
-                                self.state.mode = EditorMode::MapEditor;
-                            }
-
-                            ui.add_space(gap);
-
-                            if mode_card(ui, "Sprite Viewer", "Browse and edit sprites", card_w) {
-                                self.state.mode = EditorMode::SpriteViewer;
-                            }
-                        });
+                        self.state.mode = EditorMode::MapEditor;
+                        self.state.active_tab = WorkspaceTab::MapEditor;
                     }
                 });
             });
@@ -1340,6 +1735,9 @@ impl MapEditorApp {
         if crate::sprite_editor::show(ctx, &mut self.state.sprite_editor) {
             self.save_edited_sprite(ctx);
         }
+        if self.state.sprite_editor.needs_reload {
+            self.reload_sprite_editor_pixel_data();
+        }
 
         // Floating dialogs & overlays
         crate::goto_dialog::show(ctx, &mut self.state);
@@ -1349,6 +1747,7 @@ impl MapEditorApp {
         crate::context_menu::show(ctx, &mut self.state);
         crate::item_properties::show(ctx, &mut self.state);
         crate::map_cleanup::show(ctx, &mut self.state);
+        crate::selective_eraser::show(ctx, &mut self.state);
 
         // New dialogs
         crate::map_properties::show(ctx, &mut self.state);
@@ -1362,6 +1761,17 @@ impl MapEditorApp {
         crate::view_overlays::draw_tooltip(ctx, &self.state);
         crate::creature_palette::show(ctx, &mut self.state);
         crate::map_import::show(ctx, &mut self.state);
+
+        // Map switcher
+        match crate::map_switcher::show(ctx, &mut self.state) {
+            crate::map_switcher::MapSwitcherAction::LoadMap(path) => {
+                self.state.pending_map_load = Some(path);
+            }
+            crate::map_switcher::MapSwitcherAction::CreateNew => {
+                self.state.show_new_map_dialog = true;
+            }
+            crate::map_switcher::MapSwitcherAction::None => {}
+        }
 
         // Town editor
         match crate::town_editor::show(ctx, &mut self.state) {
@@ -1404,8 +1814,13 @@ impl MapEditorApp {
         egui::TopBottomPanel::top("menu_bar")
             .frame(panel_frame)
             .show(ctx, |ui| {
-                self.show_menu_bar(ui);
+                ui.horizontal(|ui| {
+                    self.show_menu_bar(ui);
+                });
             });
+
+        // Workspace tab bar — below menu, prominent
+        show_workspace_tabs(ctx, &mut self.state.active_tab);
 
         // Status bar
         egui::TopBottomPanel::bottom("status_bar")
@@ -1538,70 +1953,81 @@ impl MapEditorApp {
         if crate::sprite_editor::show(ctx, &mut self.state.sprite_editor) {
             self.save_edited_sprite(ctx);
         }
+        if self.state.sprite_editor.needs_reload {
+            self.reload_sprite_editor_pixel_data();
+        }
 
-        // Menu bar
+        let panel_frame = egui::Frame::NONE
+            .fill(crate::theme::BG_PANEL)
+            .inner_margin(egui::Margin::same(0));
+
+        // Menu bar + workspace tabs (shared layout with map editor)
         egui::TopBottomPanel::top("sprite_menu_bar")
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_PANEL)
-                .inner_margin(egui::Margin::same(0)))
+            .frame(panel_frame)
             .show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Change Assets Folder…").clicked() {
-                        if let Some(dir) = rfd::FileDialog::new()
-                            .set_title("Select Asset Folder")
-                            .pick_folder()
-                        {
-                            self.state.pending_asset_load = Some(dir);
-                        }
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Save All to Disk").clicked() {
-                        self.save_all_sprite_sheets();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Back to Launcher").clicked() {
-                        self.state.mode = EditorMode::Welcome;
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Quit").clicked() {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
+                ui.horizontal(|ui| {
+                    egui::menu::bar(ui, |ui| {
+                        ui.menu_button("File", |ui| {
+                            if ui.button("Change Assets Folder…").clicked() {
+                                if let Some(dir) = rfd::FileDialog::new()
+                                    .set_title("Select Asset Folder")
+                                    .pick_folder()
+                                {
+                                    self.state.pending_asset_load = Some(dir);
+                                }
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button("Save All to Disk").clicked() {
+                                self.save_all_sprite_sheets();
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button("Back to Launcher").clicked() {
+                                self.state.mode = EditorMode::Welcome;
+                                self.state.active_tab = WorkspaceTab::MapEditor;
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button("Quit").clicked() {
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        });
 
-                ui.menu_button("Sprite", |ui| {
-                    let has_selection = self.state.selected_item_id.is_some();
-                    if ui.add_enabled(has_selection, egui::Button::new("Edit Selected")).clicked() {
-                        self.open_sprite_editor(ctx);
-                        ui.close_menu();
-                    }
-                    if ui.add_enabled(has_selection, egui::Button::new("Duplicate")).clicked() {
-                        self.duplicate_sprite();
-                        ui.close_menu();
-                    }
-                    if ui.add_enabled(has_selection, egui::Button::new("Delete")).clicked() {
-                        self.delete_sprite();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("New Blank Sprite").clicked() {
-                        self.add_blank_sprite();
-                        ui.close_menu();
-                    }
-                    if ui.button("Import from PNG…").clicked() {
-                        self.import_sprite_from_png(ctx);
-                        ui.close_menu();
-                    }
-                    if ui.add_enabled(has_selection, egui::Button::new("Export to PNG…")).clicked() {
-                        self.export_sprite_to_png();
-                        ui.close_menu();
-                    }
+                        ui.menu_button("Sprite", |ui| {
+                            let has_selection = self.state.viewer_selected_id.is_some();
+                            if ui.add_enabled(has_selection, egui::Button::new("Edit Selected")).clicked() {
+                                self.open_sprite_editor(ctx);
+                                ui.close_menu();
+                            }
+                            if ui.add_enabled(has_selection, egui::Button::new("Duplicate")).clicked() {
+                                self.duplicate_sprite();
+                                ui.close_menu();
+                            }
+                            if ui.add_enabled(has_selection, egui::Button::new("Delete")).clicked() {
+                                self.delete_sprite();
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button("New Blank Sprite").clicked() {
+                                self.add_blank_sprite();
+                                ui.close_menu();
+                            }
+                            if ui.button("Import from PNG…").clicked() {
+                                self.import_sprite_from_png(ctx);
+                                ui.close_menu();
+                            }
+                            if ui.add_enabled(has_selection, egui::Button::new("Export to PNG…")).clicked() {
+                                self.export_sprite_to_png();
+                                ui.close_menu();
+                            }
+                        });
+                    });
                 });
             });
-        });
+
+        // Workspace tab bar — below menu, prominent
+        show_workspace_tabs(ctx, &mut self.state.active_tab);
 
         // Action bar
         egui::TopBottomPanel::top("sprite_actions")
@@ -1650,7 +2076,7 @@ impl MapEditorApp {
 
                 // Selected info (right-aligned)
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(id) = self.state.selected_item_id {
+                    if let Some(id) = self.state.viewer_selected_id {
                         let mut label = format!("#{}", id);
                         if let Some(ref apps) = self.state.appearances {
                             if let Some(app) = apps.get(pte_appearances::Category::Object, id) {
@@ -1690,6 +2116,7 @@ impl MapEditorApp {
                             ).min_size(egui::vec2(0.0, 18.0))
                         ).clicked() {
                             self.state.mode = EditorMode::Welcome;
+                            self.state.active_tab = WorkspaceTab::MapEditor;
                         }
                     });
                 });
@@ -1736,29 +2163,82 @@ impl MapEditorApp {
 
     /// Open the pixel editor for the currently selected sprite.
     fn open_sprite_editor(&mut self, _ctx: &egui::Context) {
-        let Some(item_id) = self.state.selected_item_id else { return };
+        let Some(item_id) = self.state.effective_selected_id() else { return };
 
-        // Resolve item_id → sprite_id via appearances
-        let sprite_id = if let Some(ref apps) = self.state.appearances {
-            pte_appearances::first_sprite_id(
-                apps.get(pte_appearances::Category::Object, item_id)
-                    .unwrap_or_else(|| {
-                        // fallback: dummy
-                        apps.objects.values().next().unwrap()
-                    }),
-            )
+        // Resolve appearance
+        let appearance = if let Some(ref apps) = self.state.appearances {
+            apps.get(pte_appearances::Category::Object, item_id).cloned()
         } else {
-            Some(item_id)
+            None
         };
 
-        let Some(sid) = sprite_id else { return };
+        // Build appearance context with all frame groups
+        let mut app_ctx = crate::sprite_editor::AppearanceContext::default();
 
-        // Find the sheet containing this sprite and extract pixel data
+        if let Some(ref app) = appearance {
+            for (fg_idx, fg) in app.frame_group.iter().enumerate() {
+                if let Some(ref si) = fg.sprite_info {
+                    let layers = si.layers.unwrap_or(1);
+                    let pw = si.pattern_width.unwrap_or(1);
+                    let ph = si.pattern_height.unwrap_or(1);
+                    let pd = si.pattern_depth.unwrap_or(1);
+                    let num_frames = si.animation.as_ref()
+                        .map(|a| a.sprite_phase.len() as u32)
+                        .unwrap_or(1)
+                        .max(1);
+
+                    let label = if app.frame_group.len() > 1 {
+                        format!("Group {}", fg_idx)
+                    } else {
+                        "Sprites".to_string()
+                    };
+
+                    app_ctx.frame_groups.push(crate::sprite_editor::FrameGroupInfo {
+                        label,
+                        sprite_ids: si.sprite_id.to_vec(),
+                        layers,
+                        pattern_width: pw,
+                        pattern_height: ph,
+                        pattern_depth: pd,
+                        num_frames,
+                        sprite_w: pw * 32,
+                        sprite_h: ph * 32,
+                    });
+                }
+            }
+        }
+
+        // Determine which sprite to load initially
+        let sid = app_ctx.current_sprite_id()
+            .or_else(|| {
+                // Fallback: direct sprite ID
+                Some(item_id)
+            });
+
+        let Some(sid) = sid else { return };
+
+        // Find the sheet and extract pixel data
         for sheet in self.state.sprite_sheets.values() {
             if sid >= sheet.first_sprite_id && sid <= sheet.last_sprite_id {
                 if let Some(pixels) = sheet.get_sprite(sid) {
                     let (w, h) = sheet.sprite_dimensions();
                     self.state.sprite_editor.load_sprite(sid, pixels, w, h);
+                    self.state.sprite_editor.set_appearance_context(app_ctx.clone());
+
+                    // Pre-populate thumbnail textures for all sprites in all frame groups
+                    self.state.sprite_editor.thumb_textures.clear();
+                    for fg in &app_ctx.frame_groups {
+                        for &thumb_sid in &fg.sprite_ids {
+                            if let Some(tex) = crate::viewport::get_or_upload(
+                                &mut self.state.sprite_textures,
+                                &self.state.sprite_sheets,
+                                _ctx,
+                                thumb_sid,
+                            ) {
+                                self.state.sprite_editor.thumb_textures.insert(thumb_sid, tex);
+                            }
+                        }
+                    }
                     return;
                 }
             }
@@ -1786,6 +2266,32 @@ impl MapEditorApp {
         self.state.sprite_textures.insert(sid, tex);
 
         tracing::info!("Saved sprite #{} back to sheet", sid);
+    }
+
+    /// Reload pixel data for the sprite editor after navigation (frame/group change).
+    fn reload_sprite_editor_pixel_data(&mut self) {
+        self.state.sprite_editor.needs_reload = false;
+
+        let Some(sid) = self.state.sprite_editor.appearance_ctx.current_sprite_id() else {
+            return;
+        };
+
+        for sheet in self.state.sprite_sheets.values() {
+            if sid >= sheet.first_sprite_id && sid <= sheet.last_sprite_id {
+                if let Some(pixels) = sheet.get_sprite(sid) {
+                    let (w, h) = sheet.sprite_dimensions();
+                    self.state.sprite_editor.editing_sprite_id = Some(sid);
+                    self.state.sprite_editor.sprite_w = w;
+                    self.state.sprite_editor.sprite_h = h;
+                    self.state.sprite_editor.pixels = pixels;
+                    self.state.sprite_editor.undo_stack.clear();
+                    self.state.sprite_editor.redo_stack.clear();
+                    self.state.sprite_editor.dirty = false;
+                    self.state.sprite_editor.preview_tex = None;
+                    return;
+                }
+            }
+        }
     }
 
     /// Save all modified sprite sheets to disk.
@@ -1834,13 +2340,17 @@ impl MapEditorApp {
             description: None,
         };
         pte_appearances::upsert_appearance(apps, pte_appearances::Category::Object, new_app);
-        self.state.selected_item_id = Some(next_id);
+        // Select the new sprite in whichever tab is active
+        match self.state.active_tab {
+            crate::state::WorkspaceTab::SpriteViewer => self.state.viewer_selected_id = Some(next_id),
+            crate::state::WorkspaceTab::MapEditor => self.state.selected_item_id = Some(next_id),
+        }
         tracing::info!("Created blank appearance #{}", next_id);
     }
 
     /// Duplicate the selected appearance.
     fn duplicate_sprite(&mut self) {
-        let Some(item_id) = self.state.selected_item_id else { return };
+        let Some(item_id) = self.state.effective_selected_id() else { return };
         let Some(ref mut apps) = self.state.appearances else { return };
 
         let source = match apps.get(pte_appearances::Category::Object, item_id) {
@@ -1853,17 +2363,23 @@ impl MapEditorApp {
         new_app.id = Some(next_id);
         new_app.name = Some(format!("Copy of #{}", item_id));
         pte_appearances::upsert_appearance(apps, pte_appearances::Category::Object, new_app);
-        self.state.selected_item_id = Some(next_id);
+        match self.state.active_tab {
+            crate::state::WorkspaceTab::SpriteViewer => self.state.viewer_selected_id = Some(next_id),
+            crate::state::WorkspaceTab::MapEditor => self.state.selected_item_id = Some(next_id),
+        }
         tracing::info!("Duplicated #{} → #{}", item_id, next_id);
     }
 
     /// Delete the selected appearance.
     fn delete_sprite(&mut self) {
-        let Some(item_id) = self.state.selected_item_id else { return };
+        let Some(item_id) = self.state.effective_selected_id() else { return };
         let Some(ref mut apps) = self.state.appearances else { return };
 
         if pte_appearances::remove_appearance(apps, pte_appearances::Category::Object, item_id) {
-            self.state.selected_item_id = None;
+            match self.state.active_tab {
+                crate::state::WorkspaceTab::SpriteViewer => self.state.viewer_selected_id = None,
+                crate::state::WorkspaceTab::MapEditor => self.state.selected_item_id = None,
+            }
             tracing::info!("Deleted appearance #{}", item_id);
         }
     }
@@ -1898,7 +2414,7 @@ impl MapEditorApp {
 
     /// Export the selected sprite to a PNG file.
     fn export_sprite_to_png(&self) {
-        let Some(item_id) = self.state.selected_item_id else { return };
+        let Some(item_id) = self.state.effective_selected_id() else { return };
 
         // Resolve to sprite_id
         let sprite_id = if let Some(ref apps) = self.state.appearances {

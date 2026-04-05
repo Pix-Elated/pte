@@ -33,6 +33,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
     };
 
     // Copy camera values to avoid borrow conflicts
+    // First: animate zoom interpolation
+    let dt = ui.input(|i| i.stable_dt);
+    if state.camera.animate_zoom(dt) {
+        ui.ctx().request_repaint(); // Keep animating
+    }
+
     let cam_center_x = state.camera.center_x;
     let cam_center_y = state.camera.center_y;
     let cam_z = state.camera.z_level;
@@ -84,10 +90,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
     let dt = ui.input(|i| i.stable_dt) as f64;
     state.anim_time += dt;
     let anim_time_ms = (state.anim_time * 1000.0) as u64;
+    let ctx = ui.ctx().clone();
 
     // Request repaint for animations
     if state.animate_sprites {
-        ui.ctx().request_repaint();
+        ctx.request_repaint();
     }
 
     // ── Multi-z ghost floors (render floors ABOVE current z at reduced opacity) ──
@@ -130,7 +137,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 if let Some(ground_id) = tile.ground {
                     draw_item_sprite_alpha(
                         &painter, tile_rect, ground_id as u32,
-                        &state.appearances, &state.sprite_textures,
+                        &state.appearances, &mut state.sprite_textures,
+                        &state.sprite_sheets, &ctx,
                         state.animate_sprites, anim_time_ms, *alpha,
                     );
                 }
@@ -138,7 +146,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     for item in &tile.items {
                         draw_item_sprite_alpha(
                             &painter, tile_rect, item.id as u32,
-                            &state.appearances, &state.sprite_textures,
+                            &state.appearances, &mut state.sprite_textures,
+                            &state.sprite_sheets, &ctx,
                             state.animate_sprites, anim_time_ms, *alpha,
                         );
                     }
@@ -199,7 +208,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
             let tl = world_to_screen(tile.x as f64, tile.y as f64);
             let br = world_to_screen(tile.x as f64 + 1.0, tile.y as f64 + 1.0);
-            let tile_rect = Rect::from_min_max(tl, br);
+            // At low zoom, expand tile rect by half a pixel to eliminate seam artifacts
+            let tile_rect = if tile_px < 16.0 {
+                let pad = 0.5;
+                Rect::from_min_max(tl, Pos2::new(br.x + pad, br.y + pad))
+            } else {
+                Rect::from_min_max(tl, br)
+            };
 
             if lod == 1 {
                 // Minimap mode — single colored pixel per tile
@@ -211,7 +226,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     if let Some(ground_id) = tile.ground {
                         draw_item_sprite(
                             &painter, tile_rect, ground_id as u32,
-                            &state.appearances, &state.sprite_textures,
+                            &state.appearances, &mut state.sprite_textures,
+                            &state.sprite_sheets, &ctx,
                             state.animate_sprites, anim_time_ms,
                         );
                     }
@@ -230,7 +246,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                         let item = &tile.items[idx];
                         draw_item_sprite(
                             &painter, tile_rect, item.id as u32,
-                            &state.appearances, &state.sprite_textures,
+                            &state.appearances, &mut state.sprite_textures,
+                            &state.sprite_sheets, &ctx,
                             state.animate_sprites, anim_time_ms,
                         );
                     }
@@ -402,7 +419,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     // Draw a ghost of what will be placed
                     let preview_drawn = if tile_px >= 8.0 {
                         draw_brush_ghost(
-                            &painter, tile_rect, state, anim_time_ms,
+                            &painter, tile_rect,
+                            &state.appearances, &mut state.sprite_textures,
+                            &state.sprite_sheets, &ctx,
+                            state.active_brush, state.selected_item_id,
+                            &state.brush_registry, state.animate_sprites,
+                            anim_time_ms,
                         )
                     } else {
                         false
@@ -493,14 +515,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                         if let Some(gid) = src_tile.ground {
                             draw_item_sprite_alpha(
                                 &painter, tile_rect, gid as u32,
-                                &state.appearances, &state.sprite_textures,
+                                &state.appearances, &mut state.sprite_textures,
+                                &state.sprite_sheets, &ctx,
                                 state.animate_sprites, anim_time_ms, 120,
                             );
                         }
                         for item in &src_tile.items {
                             draw_item_sprite_alpha(
                                 &painter, tile_rect, item.id as u32,
-                                &state.appearances, &state.sprite_textures,
+                                &state.appearances, &mut state.sprite_textures,
+                                &state.sprite_sheets, &ctx,
                                 state.animate_sprites, anim_time_ms, 120,
                             );
                         }
@@ -562,27 +586,26 @@ fn handle_viewport_input(
         state.camera.center_y -= delta.y as f64 / tile_px as f64;
     }
 
-    // Zoom with scroll wheel — logarithmic stepping for consistent feel
+    // Zoom with scroll wheel — smooth logarithmic zoom towards cursor
     let scroll = response.ctx.input(|i| i.smooth_scroll_delta.y);
+    let ctrl_held = response.ctx.input(|i| i.modifiers.ctrl);
     if scroll != 0.0 && response.hovered() {
-        // Zoom towards cursor position (not center)
+        // Store world position under cursor before zoom change
         if let Some(hover_pos) = response.hover_pos() {
             let (wx_before, wy_before) = screen_to_world(hover_pos.x, hover_pos.y);
-            state.camera.zoom_by_scroll(scroll);
-            // After zoom, the same screen position maps to a different world point.
-            let new_tile_px = state.camera.tile_size();
-            // The cursor's screen offset from viewport center
+            state.camera.zoom_by_scroll_fine(scroll, ctrl_held);
+            // Use zoom_target to compute the final camera offset
+            // (animate_zoom will interpolate there smoothly)
+            let target_tile_px = 32.0 * state.camera.zoom_target;
             let rect = response.rect;
             let dx_screen = hover_pos.x - (rect.min.x + rect.width() / 2.0);
             let dy_screen = hover_pos.y - (rect.min.y + rect.height() / 2.0);
-            // Under new zoom, this screen offset maps to a different world offset
-            let new_wx = state.camera.center_x + dx_screen as f64 / new_tile_px as f64;
-            let new_wy = state.camera.center_y + dy_screen as f64 / new_tile_px as f64;
-            // Adjust camera so cursor stays over the same world point
+            let new_wx = state.camera.center_x + dx_screen as f64 / target_tile_px as f64;
+            let new_wy = state.camera.center_y + dy_screen as f64 / target_tile_px as f64;
             state.camera.center_x += wx_before - new_wx;
             state.camera.center_y += wy_before - new_wy;
         } else {
-            state.camera.zoom_by_scroll(scroll);
+            state.camera.zoom_by_scroll_fine(scroll, ctrl_held);
         }
     }
 
@@ -662,19 +685,54 @@ fn handle_viewport_input(
                         }
                 }
                 ToolType::Eraser => {
-                    if !state.stroke_touched(tx, ty, z) {
-                        if let Some(ref mut map) = state.map_data {
-                            let action = crate::tools::eraser::apply_eraser(
-                                map,
-                                tx,
-                                ty,
-                                z,
-                                state.brush_size,
-                                state.brush_shape,
-                                shift,
-                                state.eraser_flags_only,
-                            );
-                            state.stroke_add(action);
+                    match state.eraser_mode {
+                        crate::state::EraserMode::TopItem => {
+                            if !state.stroke_touched(tx, ty, z) {
+                                if let Some(ref mut map) = state.map_data {
+                                    let action = crate::tools::eraser::apply_eraser(
+                                        map, tx, ty, z,
+                                        state.brush_size, state.brush_shape,
+                                        shift, state.eraser_flags_only,
+                                    );
+                                    state.stroke_add(action);
+                                }
+                            }
+                        }
+                        crate::state::EraserMode::Selective => {
+                            // Open the selective eraser picker for this tile
+                            if let Some(ref map) = state.map_data {
+                                if let Some(tile) = map.get_tile(tx, ty, z) {
+                                    let mut items = Vec::new();
+                                    if let Some(ground) = tile.ground {
+                                        state.selective_eraser.has_ground = true;
+                                        state.selective_eraser.ground_id = ground as u32;
+                                    } else {
+                                        state.selective_eraser.has_ground = false;
+                                        state.selective_eraser.ground_id = 0;
+                                    }
+                                    for item in &tile.items {
+                                        items.push((item.id as u32, format!("Item #{}", item.id)));
+                                    }
+                                    state.selective_eraser.tile_x = tx;
+                                    state.selective_eraser.tile_y = ty;
+                                    state.selective_eraser.tile_z = z;
+                                    state.selective_eraser.items = items;
+                                    state.selective_eraser.open = true;
+                                }
+                            }
+                        }
+                        crate::state::EraserMode::FullTile => {
+                            if !state.stroke_touched(tx, ty, z) {
+                                if let Some(ref mut map) = state.map_data {
+                                    let action = crate::tools::eraser::apply_eraser(
+                                        map, tx, ty, z,
+                                        state.brush_size, state.brush_shape,
+                                        true, // clear_all = true
+                                        false,
+                                    );
+                                    state.stroke_add(action);
+                                }
+                            }
                         }
                     }
                 }
@@ -887,48 +945,79 @@ fn handle_viewport_input(
 fn draw_brush_ghost(
     painter: &egui::Painter,
     rect: Rect,
-    state: &EditorState,
+    appearances: &Option<appearances::LoadedAppearances>,
+    textures: &mut std::collections::HashMap<u32, egui::TextureHandle>,
+    sheets: &std::collections::HashMap<String, pte_assets::SpriteSheet>,
+    ctx: &egui::Context,
+    active_brush: Option<crate::brushes::BrushId>,
+    selected_item_id: Option<u32>,
+    brush_registry: &crate::brushes::registry::BrushRegistry,
+    animate_sprites: bool,
     anim_time_ms: u64,
 ) -> bool {
     let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
+    let tint = Color32::from_rgba_unmultiplied(255, 255, 255, 100);
 
-    // Resolve what sprite ID we'd place
-    let item_id = if let Some(brush_id) = state.active_brush {
-        // Brush system: try to get a representative ground item from the brush
-        state.brush_registry.get(brush_id)
+    let item_id: Option<u32> = if let Some(brush_id) = active_brush {
+        brush_registry.get(brush_id)
             .and_then(|b| b.preview_item_id())
             .map(|id| id as u32)
     } else {
-        state.selected_item_id
+        selected_item_id
     };
 
     let Some(item_id) = item_id else { return false };
 
-    if let Some(ref apps) = state.appearances {
+    if let Some(ref apps) = appearances {
         if let Some(appearance) = apps.get(appearances::Category::Object, item_id) {
-            if let Some(sid) = resolve_appearance_sprite(appearance, 0, state.animate_sprites, anim_time_ms) {
-                if let Some(tex) = state.sprite_textures.get(&sid) {
-                    // Draw with ghost alpha (semi-transparent)
-                    painter.image(
-                        tex.id(),
-                        rect,
-                        uv,
-                        Color32::from_rgba_unmultiplied(255, 255, 255, 100),
-                    );
+            if let Some(sid) = resolve_appearance_sprite(appearance, 0, animate_sprites, anim_time_ms) {
+                if let Some(tex) = get_or_upload(textures, sheets, ctx, sid) {
+                    // Handle oversized sprites (64×64 etc.) — extend UP and LEFT
+                    let [tex_w, tex_h] = tex.size();
+                    let tile_w = rect.width();
+                    let tile_h = rect.height();
+                    let tiles_w = (tex_w as f32 / 32.0).max(1.0);
+                    let tiles_h = (tex_h as f32 / 32.0).max(1.0);
+
+                    let draw_rect = if tiles_w > 1.0 || tiles_h > 1.0 {
+                        Rect::from_min_max(
+                            Pos2::new(
+                                rect.max.x - tile_w * tiles_w,
+                                rect.max.y - tile_h * tiles_h,
+                            ),
+                            rect.max,
+                        )
+                    } else {
+                        rect
+                    };
+
+                    painter.image(tex.id(), draw_rect, uv, tint);
                     return true;
                 }
             }
         }
     }
 
-    // Try direct sprite lookup
-    if let Some(tex) = state.sprite_textures.get(&item_id) {
-        painter.image(
-            tex.id(),
-            rect,
-            uv,
-            Color32::from_rgba_unmultiplied(255, 255, 255, 100),
-        );
+    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id) {
+        let [tex_w, tex_h] = tex.size();
+        let tile_w = rect.width();
+        let tile_h = rect.height();
+        let tiles_w = (tex_w as f32 / 32.0).max(1.0);
+        let tiles_h = (tex_h as f32 / 32.0).max(1.0);
+
+        let draw_rect = if tiles_w > 1.0 || tiles_h > 1.0 {
+            Rect::from_min_max(
+                Pos2::new(
+                    rect.max.x - tile_w * tiles_w,
+                    rect.max.y - tile_h * tiles_h,
+                ),
+                rect.max,
+            )
+        } else {
+            rect
+        };
+
+        painter.image(tex.id(), draw_rect, uv, tint);
         return true;
     }
 
@@ -1071,7 +1160,9 @@ fn draw_item_sprite(
     rect: Rect,
     item_id: u32,
     appearances: &Option<appearances::LoadedAppearances>,
-    textures: &std::collections::HashMap<u32, egui::TextureHandle>,
+    textures: &mut std::collections::HashMap<u32, egui::TextureHandle>,
+    sheets: &std::collections::HashMap<String, pte_assets::SpriteSheet>,
+    ctx: &egui::Context,
     animate: bool,
     anim_time_ms: u64,
 ) {
@@ -1080,7 +1171,8 @@ fn draw_item_sprite(
     if let Some(ref apps) = appearances {
         if let Some(appearance) = apps.get(Category::Object, item_id) {
             if let Some(sid) = resolve_appearance_sprite(appearance, 0, animate, anim_time_ms) {
-                if let Some(tex) = textures.get(&sid) {
+                let tex = get_or_upload(textures, sheets, ctx, sid);
+                if let Some(tex) = tex {
                     // Handle oversized sprites — large sprites extend UP and LEFT
                     let [tex_w, tex_h] = tex.size();
                     let tile_w = rect.width();
@@ -1108,7 +1200,7 @@ fn draw_item_sprite(
     }
 
     // Fallback: try direct sprite_id lookup
-    if let Some(tex) = textures.get(&item_id) {
+    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id) {
         painter.image(tex.id(), rect, uv, Color32::WHITE);
         return;
     }
@@ -1125,7 +1217,9 @@ fn draw_item_sprite_alpha(
     rect: Rect,
     item_id: u32,
     appearances: &Option<appearances::LoadedAppearances>,
-    textures: &std::collections::HashMap<u32, egui::TextureHandle>,
+    textures: &mut std::collections::HashMap<u32, egui::TextureHandle>,
+    sheets: &std::collections::HashMap<String, pte_assets::SpriteSheet>,
+    ctx: &egui::Context,
     animate: bool,
     anim_time_ms: u64,
     alpha: u8,
@@ -1136,7 +1230,7 @@ fn draw_item_sprite_alpha(
     if let Some(ref apps) = appearances {
         if let Some(appearance) = apps.get(Category::Object, item_id) {
             if let Some(sid) = resolve_appearance_sprite(appearance, 0, animate, anim_time_ms) {
-                if let Some(tex) = textures.get(&sid) {
+                if let Some(tex) = get_or_upload(textures, sheets, ctx, sid) {
                     let [tex_w, tex_h] = tex.size();
                     let tile_w = rect.width();
                     let tile_h = rect.height();
@@ -1162,9 +1256,32 @@ fn draw_item_sprite_alpha(
         }
     }
 
-    if let Some(tex) = textures.get(&item_id) {
+    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id) {
         painter.image(tex.id(), rect, uv, tint);
     }
+}
+
+/// Lazy texture upload: get from cache or upload from sprite sheets on first use.
+pub(crate) fn get_or_upload(
+    textures: &mut std::collections::HashMap<u32, egui::TextureHandle>,
+    sheets: &std::collections::HashMap<String, pte_assets::SpriteSheet>,
+    ctx: &egui::Context,
+    sprite_id: u32,
+) -> Option<egui::TextureHandle> {
+    if let Some(tex) = textures.get(&sprite_id) {
+        return Some(tex.clone());
+    }
+    for sheet in sheets.values() {
+        if sprite_id >= sheet.first_sprite_id && sprite_id <= sheet.last_sprite_id {
+            if let Some(pixels) = sheet.get_sprite(sprite_id) {
+                let (w, h) = sheet.sprite_dimensions();
+                let tex = crate::sprite_picker::upload_sprite_texture(ctx, sprite_id, &pixels, w, h);
+                textures.insert(sprite_id, tex.clone());
+                return Some(tex);
+            }
+        }
+    }
+    None
 }
 
 /// Compute the current animation frame index based on elapsed time and sprite phase durations.

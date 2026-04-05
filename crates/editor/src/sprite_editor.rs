@@ -53,6 +53,50 @@ impl PixelTool {
 
 // ── Sprite editor state ──────────────────────────────────────────────────────
 
+/// Appearance context — describes the full sprite structure for navigation.
+#[derive(Debug, Clone, Default)]
+pub struct AppearanceContext {
+    /// One entry per frame group in the appearance.
+    pub frame_groups: Vec<FrameGroupInfo>,
+    /// Currently selected frame group index.
+    pub fg_index: usize,
+    /// Currently selected sprite within the current frame group's sprite_id list.
+    pub sprite_index: usize,
+}
+
+/// Info about one frame group.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct FrameGroupInfo {
+    pub label: String,
+    pub sprite_ids: Vec<u32>,
+    pub layers: u32,
+    pub pattern_width: u32,  // directions
+    pub pattern_height: u32,
+    pub pattern_depth: u32,
+    pub num_frames: u32,
+    pub sprite_w: u32,
+    pub sprite_h: u32,
+}
+
+impl AppearanceContext {
+    /// Get the currently selected sprite ID.
+    pub fn current_sprite_id(&self) -> Option<u32> {
+        let fg = self.frame_groups.get(self.fg_index)?;
+        fg.sprite_ids.get(self.sprite_index).copied()
+    }
+
+    /// Get the current frame group.
+    pub fn current_fg(&self) -> Option<&FrameGroupInfo> {
+        self.frame_groups.get(self.fg_index)
+    }
+
+    /// Total sprites in the current frame group.
+    pub fn current_count(&self) -> usize {
+        self.frame_groups.get(self.fg_index).map_or(0, |fg| fg.sprite_ids.len())
+    }
+}
+
 /// State for the embedded pixel editor.
 pub struct SpriteEditorState {
     /// Whether the editor panel is open at all.
@@ -104,6 +148,18 @@ pub struct SpriteEditorState {
 
     /// Preview texture handle (updated each frame if dirty).
     pub preview_tex: Option<egui::TextureHandle>,
+
+    /// Full appearance context for navigation.
+    pub appearance_ctx: AppearanceContext,
+
+    /// Whether the user clicked Discard (signals caller to close without save).
+    pub discarded: bool,
+
+    /// Signal: the user navigated to a different sprite and needs a pixel reload.
+    pub needs_reload: bool,
+
+    /// Thumbnail texture handles for sprites in the current frame group.
+    pub thumb_textures: std::collections::HashMap<u32, egui::TextureHandle>,
 }
 
 impl Default for SpriteEditorState {
@@ -127,6 +183,10 @@ impl Default for SpriteEditorState {
             palette: default_palette(),
             hex_input: String::new(),
             preview_tex: None,
+            appearance_ctx: AppearanceContext::default(),
+            discarded: false,
+            needs_reload: false,
+            thumb_textures: std::collections::HashMap::new(),
         }
     }
 }
@@ -145,6 +205,26 @@ impl SpriteEditorState {
         self.dirty = false;
         self.open = true;
         self.preview_tex = None;
+        self.discarded = false;
+        self.needs_reload = false;
+    }
+
+    /// Set full appearance context (frame groups, sprite lists, etc.).
+    pub fn set_appearance_context(&mut self, ctx: AppearanceContext) {
+        self.appearance_ctx = ctx;
+    }
+
+    /// Navigate to a different sprite within the current frame group.
+    pub fn navigate_to(&mut self, sprite_index: usize) {
+        self.appearance_ctx.sprite_index = sprite_index;
+        self.needs_reload = true;
+    }
+
+    /// Navigate to a different frame group.
+    pub fn navigate_fg(&mut self, fg_index: usize) {
+        self.appearance_ctx.fg_index = fg_index;
+        self.appearance_ctx.sprite_index = 0;
+        self.needs_reload = true;
     }
 
     fn push_undo(&mut self) {
@@ -282,7 +362,8 @@ pub fn show(ctx: &egui::Context, editor: &mut SpriteEditorState) -> bool {
     let mut is_open = editor.open;
 
     egui::Window::new("Sprite Editor")
-        .default_size([700.0, 550.0])
+        .default_size([800.0, 620.0])
+        .min_size([600.0, 400.0])
         .resizable(true)
         .collapsible(false)
         .open(&mut is_open)
@@ -336,22 +417,20 @@ pub fn show(ctx: &egui::Context, editor: &mut SpriteEditorState) -> bool {
             ui.separator();
 
             // ── Main area: canvas left, palette/info right ──
-            ui.horizontal(|ui| {
-                // Left: canvas
-                let canvas_size = Vec2::new(
-                    editor.sprite_w as f32 * editor.zoom,
-                    editor.sprite_h as f32 * editor.zoom,
-                );
-                let desired = canvas_size + Vec2::new(4.0, 4.0);
-                let max_canvas = ui.available_size() - Vec2::new(160.0, 0.0);
-                let clamped = Vec2::new(
-                    desired.x.min(max_canvas.x).max(200.0),
-                    desired.y.min(max_canvas.y).max(200.0),
-                );
+            // Use horizontal_top so canvas gets full height, not centered
+            let palette_width = 180.0;
+            let canvas_w = editor.sprite_w as f32 * editor.zoom;
+            let canvas_h = editor.sprite_h as f32 * editor.zoom;
 
+            ui.horizontal_top(|ui| {
+                // Left: canvas in its own scroll area (for zoomed-in panning)
+                let max_canvas_w = (ui.available_width() - palette_width - 20.0).max(200.0);
+                let max_canvas_h = (ui.available_height() - 4.0).max(200.0);
                 egui::ScrollArea::both()
-                    .max_width(clamped.x)
-                    .max_height(clamped.y)
+                    .max_width(max_canvas_w.min(canvas_w))
+                    .max_height(max_canvas_h.min(canvas_h))
+                    .auto_shrink([false, false])
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                     .show(ui, |ui| {
                         draw_canvas(ui, editor);
                     });
@@ -471,19 +550,149 @@ pub fn show(ctx: &egui::Context, editor: &mut SpriteEditorState) -> bool {
 
                     // Save / Discard buttons
                     ui.horizontal(|ui| {
-                        if ui.button("💾 Save").clicked() {
+                        let save_btn = egui::Button::new(
+                            crate::icons::icon_colored(crate::icons::SAVE, 13.0, crate::theme::SUCCESS)
+                        ).min_size(egui::vec2(60.0, 24.0));
+                        if ui.add_enabled(editor.dirty, save_btn)
+                            .on_hover_text("Save changes back to sprite sheet")
+                            .clicked()
+                        {
                             saved = true;
                         }
-                        if ui.button("✖ Discard").clicked() {
+                        let discard_btn = egui::Button::new(
+                            crate::icons::icon_colored(crate::icons::X, 13.0, crate::theme::ERROR)
+                        ).min_size(egui::vec2(60.0, 24.0));
+                        if ui.add(discard_btn)
+                            .on_hover_text("Discard changes and close")
+                            .clicked()
+                        {
+                            editor.discarded = true;
                             editor.open = false;
                         }
                     });
+
+                    // ── Frame group / sprite navigation ──
+                    let total_fgs = editor.appearance_ctx.frame_groups.len();
+                    let total_sprites = editor.appearance_ctx.current_count();
+
+                    if total_fgs > 0 && total_sprites > 0 {
+                        ui.add_space(8.0);
+                        ui.separator();
+
+                        // Frame group selector (if multiple)
+                        if total_fgs > 1 {
+                            // Extract labels to avoid borrow conflicts
+                            let labels: Vec<String> = editor.appearance_ctx.frame_groups
+                                .iter().map(|fg| fg.label.clone()).collect();
+                            let current_fg = editor.appearance_ctx.fg_index;
+
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("Frame Group:")
+                                        .size(10.0)
+                                        .color(crate::theme::TEXT_MUTED),
+                                );
+                                for (i, label) in labels.iter().enumerate() {
+                                    let selected = i == current_fg;
+                                    if ui.add(egui::SelectableLabel::new(selected, label)).clicked() && !selected {
+                                        editor.navigate_fg(i);
+                                    }
+                                }
+                            });
+                        }
+
+                        // Extract info from current frame group
+                        let fg = editor.appearance_ctx.current_fg().unwrap();
+                        let count = fg.sprite_ids.len();
+                        let idx = editor.appearance_ctx.sprite_index;
+                        let info_text = format!(
+                            "{}×{} px • {} layers • {} dirs • {} frames",
+                            fg.sprite_w, fg.sprite_h,
+                            fg.layers, fg.pattern_width, fg.num_frames,
+                        );
+                        // Clone sprite IDs for the thumbnail strip
+                        let thumb_ids: Vec<u32> = fg.sprite_ids.clone();
+
+                        // Show layout info
+                        ui.label(
+                            egui::RichText::new(info_text)
+                                .size(9.5)
+                                .color(crate::theme::TEXT_MUTED),
+                        );
+
+                        // Navigation: sprite N / total
+                        ui.horizontal(|ui| {
+                            ui.label(format!("Sprite {}/{}", idx + 1, count));
+                            if ui.add_enabled(
+                                idx > 0,
+                                egui::Button::new(crate::icons::icon(crate::icons::CHEVRON_LEFT, 12.0)),
+                            ).clicked() {
+                                editor.navigate_to(idx - 1);
+                            }
+                            if ui.add_enabled(
+                                idx + 1 < count,
+                                egui::Button::new(crate::icons::icon(crate::icons::CHEVRON_RIGHT, 12.0)),
+                            ).clicked() {
+                                editor.navigate_to(idx + 1);
+                            }
+                        });
+
+                        // Thumbnail strip of all sprites in this frame group
+                        let thumb_size = 28.0;
+                        ui.add_space(4.0);
+                        egui::ScrollArea::horizontal()
+                            .max_width(ui.available_width())
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
+                                    let current_idx = editor.appearance_ctx.sprite_index;
+                                    for (i, &sid) in thumb_ids.iter().enumerate() {
+                                        let is_current = i == current_idx;
+                                        let (rect, resp) = ui.allocate_exact_size(
+                                            egui::Vec2::splat(thumb_size),
+                                            egui::Sense::click(),
+                                        );
+                                        let bg = if is_current { crate::theme::ACCENT_MUTED } else { crate::theme::BG_SURFACE };
+                                        let border = if is_current { crate::theme::ACCENT } else { crate::theme::BORDER };
+                                        ui.painter().rect_filled(rect, 2.0, bg);
+                                        ui.painter().rect_stroke(rect, 2.0, (0.5, border), egui::StrokeKind::Outside);
+
+                                        // Draw thumbnail texture if available
+                                        if let Some(tex) = editor.thumb_textures.get(&sid) {
+                                            let inner = rect.shrink(2.0);
+                                            ui.painter().image(
+                                                tex.id(),
+                                                inner,
+                                                egui::Rect::from_min_max(
+                                                    egui::Pos2::ZERO,
+                                                    egui::Pos2::new(1.0, 1.0),
+                                                ),
+                                                Color32::WHITE,
+                                            );
+                                        } else {
+                                            ui.painter().text(
+                                                rect.center(),
+                                                egui::Align2::CENTER_CENTER,
+                                                format!("{}", sid),
+                                                egui::FontId::proportional(8.0),
+                                                crate::theme::TEXT_MUTED,
+                                            );
+                                        }
+
+                                        if resp.clicked() && !is_current {
+                                            editor.navigate_to(i);
+                                        }
+                                        resp.on_hover_text(format!("Sprite #{}", sid));
+                                    }
+                                });
+                            });
+                    }
                 });
             });
         });
 
-    // Sync open state back
-    editor.open = is_open;
+    // Sync open state back (respect discard/close from inside the window)
+    editor.open = is_open && !editor.discarded;
 
     // Hotkeys when editor is open
     ctx.input(|i| {
@@ -578,8 +787,9 @@ fn draw_canvas(ui: &mut egui::Ui, editor: &mut SpriteEditorState) {
         }
     }
 
-    // Tool application
-    if response.dragged_by(egui::PointerButton::Primary) || response.clicked() {
+    // Tool application (skip when Ctrl is held — that's panning)
+    let ctrl_held = response.ctx.input(|i| i.modifiers.ctrl);
+    if !ctrl_held && (response.dragged_by(egui::PointerButton::Primary) || response.clicked()) {
         if let Some(pos) = response.interact_pointer_pos() {
             let (px, py) = pixel_from_pos(pos);
             match editor.tool {
@@ -637,11 +847,21 @@ fn draw_canvas(ui: &mut egui::Ui, editor: &mut SpriteEditorState) {
         }
     }
 
-    // Zoom with scroll wheel over canvas
-    let scroll = response.ctx.input(|i| i.smooth_scroll_delta.y);
-    if scroll != 0.0 && response.hovered() {
-        let factor = if scroll > 0.0 { 2.0 } else { -2.0 };
-        editor.zoom = (editor.zoom + factor).clamp(MIN_ZOOM, MAX_ZOOM);
+    // Ctrl+drag to pan the canvas scroll area
+    let ctrl_held = response.ctx.input(|i| i.modifiers.ctrl);
+    if ctrl_held && response.dragged_by(egui::PointerButton::Primary) {
+        let delta = response.drag_delta();
+        // Feed the negative drag delta as scroll input so the parent ScrollArea moves
+        ui.scroll_with_delta(delta);
+    }
+
+    // Zoom with scroll wheel over canvas — integer 1x steps
+    if response.hovered() {
+        let raw_scroll = response.ctx.input(|i| i.raw_scroll_delta.y);
+        if raw_scroll != 0.0 {
+            let step = if raw_scroll > 0.0 { 1.0 } else { -1.0 };
+            editor.zoom = (editor.zoom + step).clamp(MIN_ZOOM, MAX_ZOOM);
+        }
     }
 }
 

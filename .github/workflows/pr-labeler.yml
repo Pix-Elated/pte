@@ -1,0 +1,96 @@
+name: PR Labeler
+
+on:
+  pull_request:
+    branches: [staging]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    name: Auto Label PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v45
+
+      - name: Determine labels
+        id: labels
+        run: |
+          LABELS=""
+
+          # Area labels based on changed files
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "crates/editor/"; then
+            LABELS="$LABELS,area:editor"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "crates/assets/"; then
+            LABELS="$LABELS,area:assets"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "crates/appearances/"; then
+            LABELS="$LABELS,area:appearances"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "crates/otbm/"; then
+            LABELS="$LABELS,area:otbm"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "crates/spr_dat/"; then
+            LABELS="$LABELS,area:spr-dat"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "\.github/|Cargo\.toml"; then
+            LABELS="$LABELS,area:infra"
+          fi
+
+          # Type labels from branch name
+          BRANCH="${{ github.head_ref }}"
+          if [[ "$BRANCH" == feat/* || "$BRANCH" == feature/* ]]; then
+            LABELS="$LABELS,type:feature"
+          elif [[ "$BRANCH" == fix/* || "$BRANCH" == bugfix/* ]]; then
+            LABELS="$LABELS,type:bug"
+          elif [[ "$BRANCH" == refactor/* ]]; then
+            LABELS="$LABELS,type:refactor"
+          elif [[ "$BRANCH" == docs/* ]]; then
+            LABELS="$LABELS,type:docs"
+          elif [[ "$BRANCH" == chore/* ]]; then
+            LABELS="$LABELS,type:chore"
+          elif [[ "$BRANCH" == perf/* ]]; then
+            LABELS="$LABELS,type:performance"
+          fi
+
+          # Version bump detection from conventional commits
+          COMMITS=$(git log origin/staging..HEAD --pretty=format:"%s" 2>/dev/null || echo "")
+          if echo "$COMMITS" | grep -qE "^feat.*!:|BREAKING CHANGE"; then
+            LABELS="$LABELS,version-major"
+          elif echo "$COMMITS" | grep -qE "^feat"; then
+            LABELS="$LABELS,version-minor"
+          elif echo "$COMMITS" | grep -qE "^fix|^refactor|^perf"; then
+            LABELS="$LABELS,version-patch"
+          fi
+
+          LABELS="${LABELS#,}"
+          echo "labels=$LABELS" >> $GITHUB_OUTPUT
+
+      - name: Apply labels
+        if: steps.labels.outputs.labels != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = '${{ steps.labels.outputs.labels }}'.split(',').filter(l => l);
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: labels
+              });
+            }

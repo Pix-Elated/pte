@@ -38,6 +38,7 @@ mod hotkeys;
 mod map_properties;
 mod minimap_export;
 mod new_map;
+mod new_project;
 mod perf_monitor;
 mod preferences;
 mod selection_ops;
@@ -47,7 +48,12 @@ mod view_overlays;
 mod spawn_xml;
 mod creature_palette;
 mod map_import;
+mod map_switcher;
+mod selective_eraser;
 mod editor_config;
+#[allow(dead_code)]
+mod icons;
+mod updater;
 
 fn main() -> eframe::Result<()> {
     // Initialize logging
@@ -59,7 +65,7 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Pixelated's Tibia Editor")
+            .with_title(format!("Pixelated's Tibia Editor v{}", updater::CURRENT_VERSION))
             .with_inner_size([1600.0, 900.0])
             .with_min_inner_size([800.0, 600.0]),
         ..Default::default()
@@ -70,6 +76,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             crate::theme::apply(&cc.egui_ctx);
+            crate::icons::register_font(&cc.egui_ctx);
             Ok(Box::new(app::MapEditorApp::new(cc)))
         }),
     )

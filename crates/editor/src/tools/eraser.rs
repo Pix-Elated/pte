@@ -62,3 +62,42 @@ pub fn apply_eraser(
         tiles_after,
     }
 }
+
+/// Erase a specific item by index from a tile, or the ground if `erase_ground` is true.
+pub fn erase_specific(
+    map: &mut MapData,
+    x: u16,
+    y: u16,
+    z: u8,
+    item_index: Option<usize>,
+    erase_ground: bool,
+) -> UndoAction {
+    let before = map.get_tile(x, y, z).cloned();
+
+    if let Some(tile) = map.get_tile_mut_if_exists(x, y, z) {
+        if let Some(idx) = item_index {
+            if idx < tile.items.len() {
+                tile.items.remove(idx);
+            }
+        }
+        if erase_ground {
+            tile.ground = None;
+        }
+    }
+
+    let after = map.get_tile(x, y, z).cloned();
+
+    // Clean up empty tiles
+    if let Some(ref t) = after {
+        if t.ground.is_none() && t.items.is_empty() {
+            map.remove_tile(x, y, z);
+        }
+    }
+
+    let after = map.get_tile(x, y, z).cloned();
+
+    UndoAction {
+        tiles_before: vec![(x, y, z, before)],
+        tiles_after: vec![(x, y, z, after)],
+    }
+}

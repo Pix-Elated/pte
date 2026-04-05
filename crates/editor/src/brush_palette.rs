@@ -82,7 +82,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     // Sprite preview
                     let preview_size = egui::vec2(22.0, 22.0);
                     let (rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::hover());
-                    if let Some(tex) = state.sprite_textures.get(&(look as u32)) {
+                    if let Some(tex) = crate::viewport::get_or_upload(&mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), look as u32) {
                         ui.painter().image(
                             tex.id(), rect,
                             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
@@ -104,8 +104,14 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     .corner_radius(egui::CornerRadius::same(2));
 
                     if ui.add(btn).clicked() {
-                        state.active_brush = Some(brush.id());
-                        state.selected_item_id = Some(look as u32);
+                        if is_active {
+                            // Toggle off — deselect
+                            state.active_brush = None;
+                            state.selected_item_id = None;
+                        } else {
+                            state.active_brush = Some(brush.id());
+                            state.selected_item_id = Some(look as u32);
+                        }
                     }
                 });
             }
@@ -141,8 +147,13 @@ fn show_tilesets(ui: &mut egui::Ui, state: &mut EditorState) {
                                     .fill(if is_active { theme::ACCENT } else { Color32::TRANSPARENT });
 
                                     if ui.add(btn).clicked() {
-                                        state.active_brush = Some(brush_id);
-                                        state.selected_item_id = Some(look as u32);
+                                        if is_active {
+                                            state.active_brush = None;
+                                            state.selected_item_id = None;
+                                        } else {
+                                            state.active_brush = Some(brush_id);
+                                            state.selected_item_id = Some(look as u32);
+                                        }
                                     }
                                 }
                             }

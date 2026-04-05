@@ -14,8 +14,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
         }
     });
 
-    if right_click_pos.is_some() {
-        // Store the right-clicked position for the popup
+    if let Some(pos) = right_click_pos {
+        // Capture the click position once — anchor the menu here
+        state.context_menu_pos = Some(pos);
         ctx.memory_mut(|mem| {
             mem.open_popup(egui::Id::new("tile_context_menu"));
         });
@@ -24,16 +25,14 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
     let popup_id = egui::Id::new("tile_context_menu");
 
     if ctx.memory(|mem| mem.is_popup_open(popup_id)) {
+        let anchor = state.context_menu_pos.unwrap_or(egui::pos2(100.0, 100.0));
         let hover = state.hover_tile;
         let has_sel = state.selection.is_some();
         let has_clip = state.clipboard.is_some();
 
         egui::Area::new(popup_id)
             .order(egui::Order::Foreground)
-            .fixed_pos(
-                ctx.input(|i| i.pointer.interact_pos())
-                    .unwrap_or(egui::pos2(100.0, 100.0)),
-            )
+            .fixed_pos(anchor)
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(160.0);
@@ -120,6 +119,62 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                         }
                     }
 
+                    // Delete specific item from the tile stack
+                    if let Some((hx, hy)) = hover {
+                        let z = state.camera.z_level;
+                        // Collect item info before mutable borrow
+                        let items_info: Vec<(usize, u16, Option<String>)> = state.map_data.as_ref()
+                            .and_then(|m| m.get_tile(hx, hy, z))
+                            .map(|tile| {
+                                let mut info = Vec::new();
+                                if let Some(gid) = tile.ground {
+                                    info.push((usize::MAX, gid, item_name(state, gid)));
+                                }
+                                for (i, item) in tile.items.iter().enumerate() {
+                                    info.push((i, item.id, item_name(state, item.id)));
+                                }
+                                info
+                            })
+                            .unwrap_or_default();
+
+                        if items_info.len() > 1 {
+                            ui.menu_button("🧹 Delete Item...", |ui| {
+                                for (idx, item_id, name) in &items_info {
+                                    let label = if let Some(n) = name {
+                                        format!("#{} — {}", item_id, n)
+                                    } else if *idx == usize::MAX {
+                                        format!("#{} (ground)", item_id)
+                                    } else {
+                                        format!("#{}", item_id)
+                                    };
+                                    if ui.button(&label).clicked() {
+                                        let idx = *idx;
+                                        if let Some(ref mut map) = state.map_data {
+                                            let old = map.get_tile(hx, hy, z).cloned();
+                                            let tile = map.get_tile_mut(hx, hy, z);
+                                            if idx == usize::MAX {
+                                                tile.ground = None;
+                                            } else if idx < tile.items.len() {
+                                                tile.items.remove(idx);
+                                            }
+                                            let after = if tile.ground.is_none() && tile.items.is_empty() {
+                                                map.remove_tile(hx, hy, z);
+                                                None
+                                            } else {
+                                                Some(tile.clone())
+                                            };
+                                            state.push_undo(UndoAction {
+                                                tiles_before: vec![(hx, hy, z, old)],
+                                                tiles_after: vec![(hx, hy, z, after)],
+                                            });
+                                        }
+                                        ui.close_menu();
+                                    }
+                                }
+                            });
+                        }
+                    }
+
                     // Item properties
                     if hover.is_some() {
                         if ui.button("🔧 Properties...").clicked() {
@@ -163,9 +218,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
 
         // Close on click outside
         if ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary)) {
+            state.context_menu_pos = None;
             close_popup(ctx, popup_id);
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            state.context_menu_pos = None;
             close_popup(ctx, popup_id);
         }
     }
@@ -174,4 +231,12 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
 fn close_popup(ctx: &egui::Context, id: egui::Id) {
     ctx.memory_mut(|mem| mem.close_popup());
     let _ = id; // consumed
+}
+
+/// Try to get a human-readable name for an item ID from appearances.
+fn item_name(state: &EditorState, item_id: u16) -> Option<String> {
+    state.appearances.as_ref().and_then(|apps| {
+        apps.get(pte_appearances::Category::Object, item_id as u32)
+            .and_then(|app| app.name.clone())
+    })
 }

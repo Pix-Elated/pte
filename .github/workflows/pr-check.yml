@@ -1,0 +1,134 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [staging]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-check-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      deps: ${{ steps.filter.outputs.deps }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'crates/**'
+              - 'assets/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            deps:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '**/Cargo.toml'
+
+  check:
+    name: Clippy & Format
+    runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-check-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace -- -W clippy::all -D warnings
+
+  build:
+    name: Build Verification
+    runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-build-
+
+      - name: Build release
+        run: cargo build --release
+
+  test:
+    name: Tests
+    runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
+
+      - name: Run tests
+        run: cargo test --workspace
+
+  skip-notice:
+    name: Skip Notice
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'false'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Post skip notice
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⏭️ **PR checks skipped** — no code or dependency changes detected.'
+            })

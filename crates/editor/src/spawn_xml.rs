@@ -139,13 +139,4 @@ pub fn write_spawns(spawns: &[Spawn], path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Build a deduplicated creature name list from loaded spawns.
-pub fn creature_names(spawns: &[Spawn]) -> Vec<String> {
-    let mut names: Vec<String> = spawns
-        .iter()
-        .flat_map(|s| s.creatures.iter().map(|c| c.name.clone()))
-        .collect();
-    names.sort();
-    names.dedup();
-    names
-}
+

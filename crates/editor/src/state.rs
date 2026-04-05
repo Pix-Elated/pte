@@ -21,10 +21,60 @@ use crate::brushes::BrushId;
 pub enum EditorMode {
     /// Welcome/launcher — pick what to do.
     Welcome,
-    /// Map editor workspace.
+    /// Map editor workspace (default after loading).
     MapEditor,
-    /// Sprite viewer / browser.
+}
+
+/// Active workspace tab (shown after assets are loaded).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceTab {
+    MapEditor,
     SpriteViewer,
+}
+
+/// Data sent from the background loading thread.
+pub struct LoadedAssets {
+    pub catalog: ParsedCatalog,
+    pub appearances: Option<LoadedAppearances>,
+    pub sheets: HashMap<String, SpriteSheet>,
+    pub asset_dir: PathBuf,
+    /// Map loaded on the background thread (if a map path was provided).
+    pub map: Option<pte_otbm::MapData>,
+    /// Path of the loaded map.
+    pub map_path: Option<PathBuf>,
+    /// Spawns loaded from spawn.xml alongside the map.
+    pub spawns: Vec<crate::spawn_xml::Spawn>,
+}
+
+/// Shared loading progress updated by the background thread.
+pub struct LoadingProgress {
+    pub progress: f32,
+    pub message: String,
+    pub stage: LoadingStage,
+}
+
+/// Granular loading stages for the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadingStage {
+    Catalog,
+    Appearances,
+    SpriteSheets,
+    MapParse,
+    Overlays,
+    Spawns,
+    Finalizing,
+}
+
+/// State for the background loader.
+pub struct BackgroundLoader {
+    /// Shared progress updated by the loading thread.
+    pub progress: Option<std::sync::Arc<std::sync::Mutex<LoadingProgress>>>,
+    /// Channel to receive loaded assets from the background thread.
+    pub asset_rx: Option<std::sync::mpsc::Receiver<Result<LoadedAssets, String>>>,
+    /// Channel for standalone map loading (when assets already loaded).
+    pub map_rx: Option<std::sync::mpsc::Receiver<Result<(pte_otbm::MapData, std::path::PathBuf, Vec<crate::spawn_xml::Spawn>), String>>>,
+    /// Shared progress for standalone map loading.
+    pub map_progress: Option<std::sync::Arc<std::sync::Mutex<LoadingProgress>>>,
 }
 
 /// Which tool is active.
@@ -39,6 +89,31 @@ pub enum ToolType {
     Creature,
     Spawn,
     Waypoint,
+}
+
+/// Eraser operating mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EraserMode {
+    /// Remove the topmost item only (default click).
+    TopItem,
+    /// Show a picker dialog listing all items on the tile for selective removal.
+    Selective,
+    /// Remove the entire tile (ground + all items).
+    FullTile,
+}
+
+/// State for the selective eraser dialog.
+#[derive(Debug, Clone, Default)]
+pub struct SelectiveEraserState {
+    pub open: bool,
+    pub tile_x: u16,
+    pub tile_y: u16,
+    pub tile_z: u8,
+    /// (item_id, description) for each item on the tile, bottom-to-top.
+    pub items: Vec<(u32, String)>,
+    /// Whether the tile has a ground to show.
+    pub has_ground: bool,
+    pub ground_id: u32,
 }
 
 impl ToolType {
@@ -238,6 +313,8 @@ pub struct Camera {
     pub center_y: f64,
     pub z_level: u8,
     pub zoom: f32,
+    /// Target zoom for smooth interpolation. When set, `zoom` animates toward this.
+    pub zoom_target: f32,
 }
 
 /// Pre-defined zoom steps on a logarithmic scale.
@@ -280,6 +357,7 @@ impl Default for Camera {
             center_y: 500.0,
             z_level: MAP_SURFACE_Z,
             zoom: 1.0,
+            zoom_target: 1.0,
         }
     }
 }
@@ -313,36 +391,57 @@ impl Camera {
 
     /// Step zoom in (towards higher magnification).
     pub fn zoom_in(&mut self) {
-        let cur = self.zoom;
+        let cur = self.zoom_target;
         for &level in ZOOM_LEVELS.iter() {
             if level > cur * 1.01 {
-                self.zoom = level;
+                self.zoom_target = level;
                 return;
             }
         }
-        self.zoom = *ZOOM_LEVELS.last().unwrap();
+        self.zoom_target = *ZOOM_LEVELS.last().unwrap();
     }
 
     /// Step zoom out (towards lower magnification).
     pub fn zoom_out(&mut self) {
-        let cur = self.zoom;
+        let cur = self.zoom_target;
         for &level in ZOOM_LEVELS.iter().rev() {
             if level < cur * 0.99 {
-                self.zoom = level;
+                self.zoom_target = level;
                 return;
             }
         }
-        self.zoom = ZOOM_LEVELS[0];
+        self.zoom_target = ZOOM_LEVELS[0];
     }
 
     /// Smooth zoom by a scroll delta. Positive = zoom in.
-    /// Uses logarithmic interpolation for consistent feel.
-    pub fn zoom_by_scroll(&mut self, scroll_delta: f32) {
-        // Each "tick" of scroll moves ~0.15 in log-space (roughly one zoom level)
-        let log_z = self.zoom.ln();
-        let step = scroll_delta.signum() * 0.18;
-        self.zoom = (log_z + step).exp();
+    /// Sets zoom_target for animated interpolation; actual zoom catches up each frame.
+    /// `fine` = true when Ctrl is held: 1% steps instead of 10%.
+    pub fn zoom_by_scroll_fine(&mut self, scroll_delta: f32, fine: bool) {
+        // Normal: ~10% per mouse tick (24px * 0.004 ≈ 0.096 log-units ≈ 10%)
+        // Fine:   ~1% per mouse tick  (24px * 0.0004 ≈ 0.0096 log-units ≈ 1%)
+        let sensitivity = if fine { 0.0004 } else { 0.004 };
+        let log_z = self.zoom_target.ln();
+        let step = scroll_delta * sensitivity;
+        let min = ZOOM_LEVELS[0];
+        let max = *ZOOM_LEVELS.last().unwrap();
+        self.zoom_target = (log_z + step).exp().clamp(min, max);
+    }
+
+    /// Interpolate zoom towards zoom_target. Call once per frame.
+    /// Returns true if still animating (needs repaint).
+    pub fn animate_zoom(&mut self, dt: f32) -> bool {
+        let diff = (self.zoom_target.ln() - self.zoom.ln()).abs();
+        if diff < 0.001 {
+            self.zoom = self.zoom_target;
+            return false;
+        }
+        // Exponential ease — 90% of remaining distance per 80ms
+        let t = 1.0 - (-dt / 0.06).exp(); // ~60ms time constant
+        let log_current = self.zoom.ln();
+        let log_target = self.zoom_target.ln();
+        self.zoom = (log_current + (log_target - log_current) * t).exp();
         self.clamp_zoom();
+        true
     }
 }
 
@@ -350,6 +449,11 @@ impl Camera {
 pub struct EditorState {
     // Mode
     pub mode: EditorMode,
+    /// Active workspace tab (Map Editor vs Sprite Viewer).
+    pub active_tab: WorkspaceTab,
+
+    // Background loading
+    pub loader: BackgroundLoader,
 
     // Assets
     pub asset_status: AssetStatus,
@@ -361,6 +465,9 @@ pub struct EditorState {
     // Map
     pub map_data: Option<MapData>,
     pub map_path: Option<PathBuf>,
+    /// True while a standalone map load is in progress.
+    pub map_loading: bool,
+    pub map_loading_message: String,
 
     // Camera
     pub camera: Camera,
@@ -368,6 +475,8 @@ pub struct EditorState {
     // Tools
     pub active_tool: ToolType,
     pub selected_item_id: Option<u32>,
+    /// Separate selection for the sprite viewer tab (doesn't affect map editor brush).
+    pub viewer_selected_id: Option<u32>,
     pub brush_size: u32,
     pub brush_shape: BrushShape,
 
@@ -406,6 +515,13 @@ pub struct EditorState {
 
     // Sprite textures cached for egui
     pub sprite_textures: HashMap<u32, egui::TextureHandle>,
+    /// LRU access order for texture cache eviction (most recent at back).
+    pub texture_lru: Vec<u32>,
+    /// Maximum number of GPU textures to keep loaded.
+    pub texture_cache_limit: usize,
+
+    /// Anchored position for right-click context menu.
+    pub context_menu_pos: Option<egui::Pos2>,
 
     // Animation
     /// Time accumulator for animated sprites (seconds since start).
@@ -423,6 +539,9 @@ pub struct EditorState {
 
     // Sprite editor
     pub sprite_editor: crate::sprite_editor::SpriteEditorState,
+
+    // Auto-updater
+    pub updater: crate::updater::UpdaterState,
 
     // Loading tasks
     pub pending_asset_load: Option<PathBuf>,
@@ -505,6 +624,11 @@ pub struct EditorState {
     // Asset scanner
     pub scanner: crate::asset_scanner::ScannerState,
 
+    /// The active project (set when loaded from the scanner).
+    pub active_project: Option<crate::asset_scanner::DiscoveredProject>,
+    /// Show the map switcher panel.
+    pub show_map_switcher: bool,
+
     // Map properties dialog
     pub show_map_props: bool,
 
@@ -519,6 +643,9 @@ pub struct EditorState {
     pub new_map_w: u32,
     pub new_map_h: u32,
     pub new_map_desc: String,
+
+    // New project wizard
+    pub new_project_wizard: crate::new_project::NewProjectWizard,
 
     // View overlays
     pub show_grid: bool,
@@ -553,6 +680,10 @@ pub struct EditorState {
 
     // Eraser flags mode: only erase zone/house markers, not tile contents
     pub eraser_flags_only: bool,
+    /// Active eraser mode (top-item, selective picker, or full-tile).
+    pub eraser_mode: EraserMode,
+    /// Selective eraser dialog state — populated when eraser_mode == Selective.
+    pub selective_eraser: SelectiveEraserState,
 
     // Dirty tracking — save_version tracks the undo_cursor value at last save.
     // If undo_cursor != save_version, the map has unsaved changes.
@@ -595,9 +726,25 @@ pub struct EditorState {
 }
 
 impl EditorState {
+    /// Get the effective selected item ID based on the active tab.
+    /// Sprite Viewer uses its own selection; Map Editor uses the brush selection.
+    pub fn effective_selected_id(&self) -> Option<u32> {
+        match self.active_tab {
+            WorkspaceTab::SpriteViewer => self.viewer_selected_id,
+            WorkspaceTab::MapEditor => self.selected_item_id,
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             mode: EditorMode::Welcome,
+            active_tab: WorkspaceTab::MapEditor,
+            loader: BackgroundLoader {
+                progress: None,
+                asset_rx: None,
+                map_rx: None,
+                map_progress: None,
+            },
             asset_status: AssetStatus::NotLoaded,
             asset_dir: None,
             catalog: None,
@@ -605,9 +752,12 @@ impl EditorState {
             sprite_sheets: HashMap::new(),
             map_data: None,
             map_path: None,
+            map_loading: false,
+            map_loading_message: String::new(),
             camera: Camera::default(),
             active_tool: ToolType::Brush,
             selected_item_id: None,
+            viewer_selected_id: None,
             brush_size: 1,
             brush_shape: BrushShape::Square,
             door_variant: crate::brushes::door::DoorVariant::Normal,
@@ -627,9 +777,13 @@ impl EditorState {
             stroke: StrokeState::default(),
             hover_tile: None,
             sprite_textures: HashMap::new(),
+            texture_lru: Vec::new(),
+            texture_cache_limit: 8192,
+            context_menu_pos: None,
             anim_time: 0.0,
             animate_sprites: true,
             sprite_editor: Default::default(),
+            updater: Default::default(),
             z_min: 0,
             z_max: MAP_MAX_Z,
             z_surface: MAP_SURFACE_Z,
@@ -677,6 +831,8 @@ impl EditorState {
             autosave_interval_secs: 300, // 5 minutes
             last_autosave: std::time::Instant::now(),
             scanner: Default::default(),
+            active_project: None,
+            show_map_switcher: false,
 
             // New features
             show_map_props: false,
@@ -688,6 +844,7 @@ impl EditorState {
             new_map_w: 1024,
             new_map_h: 1024,
             new_map_desc: String::new(),
+            new_project_wizard: crate::new_project::NewProjectWizard::default(),
             show_grid: true,
             show_client_box: false,
             show_light_overlay: false,
@@ -706,6 +863,8 @@ impl EditorState {
             show_perf_monitor: false,
             perf: Default::default(),
             eraser_flags_only: false,
+            eraser_mode: EraserMode::TopItem,
+            selective_eraser: SelectiveEraserState::default(),
 
             save_version: 0,
             show_close_confirm: false,
@@ -822,6 +981,19 @@ impl EditorState {
 
     pub fn assets_ready(&self) -> bool {
         matches!(self.asset_status, AssetStatus::Ready)
+    }
+
+    /// Evict least-recently-used textures when over the cache limit.
+    /// Call periodically (e.g. once per frame or after bulk loads).
+    pub fn evict_textures(&mut self) {
+        while self.sprite_textures.len() > self.texture_cache_limit {
+            if let Some(oldest_id) = self.texture_lru.first().copied() {
+                self.texture_lru.remove(0);
+                self.sprite_textures.remove(&oldest_id);
+            } else {
+                break;
+            }
+        }
     }
 
     /// Detect z-level range from the loaded map.

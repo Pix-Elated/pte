@@ -1,0 +1,155 @@
+name: Promote to Master
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+jobs:
+  promote:
+    name: Create Release PR to Master
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout staging
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Check if promotion needed
+        id: check
+        run: |
+          git fetch origin master
+          DIFF_COUNT=$(git diff origin/master origin/staging -- . ':!Cargo.toml' ':!Cargo.lock' | wc -l)
+          if [ "$DIFF_COUNT" -eq 0 ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No differences between staging and master, skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Staging has differences to promote ($DIFF_COUNT diff lines)"
+          fi
+
+      - name: Determine bump type from merged PR labels
+        if: steps.check.outputs.skip != 'true'
+        id: bump_type
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          PR_NUMBER=$(gh pr list --state merged --base staging --limit 1 --json number -q '.[0].number')
+
+          if [ -n "$PR_NUMBER" ]; then
+            LABELS=$(gh pr view $PR_NUMBER --json labels -q '.labels[].name')
+            echo "PR #$PR_NUMBER labels: $LABELS"
+            if echo "$LABELS" | grep -q "version-major"; then
+              echo "type=major" >> $GITHUB_OUTPUT
+            elif echo "$LABELS" | grep -q "version-minor"; then
+              echo "type=minor" >> $GITHUB_OUTPUT
+            else
+              echo "type=patch" >> $GITHUB_OUTPUT
+            fi
+          else
+            COMMITS=$(git log origin/master..staging --pretty=format:"%s")
+            if echo "$COMMITS" | grep -qE "^feat.*!:|BREAKING CHANGE"; then
+              echo "type=major" >> $GITHUB_OUTPUT
+            elif echo "$COMMITS" | grep -qE "^feat"; then
+              echo "type=minor" >> $GITHUB_OUTPUT
+            else
+              echo "type=patch" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Bump version and create release branch
+        if: steps.check.outputs.skip != 'true'
+        id: version
+        run: |
+          # Read current version from master's Cargo.toml
+          CURRENT=$(git show origin/master:Cargo.toml | grep -A1 '\[workspace.package\]' | grep 'version' | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "Current version (from master): $CURRENT"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "${{ steps.bump_type.outputs.type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW="${MAJOR}.${MINOR}.${PATCH}"
+          BRANCH="release/v${NEW}"
+          echo "New version: $NEW"
+          echo "Release branch: $BRANCH"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH" origin/master
+
+          # Squash-merge staging
+          git merge --squash -X theirs staging
+
+          if git diff --cached --quiet; then
+            echo "No new changes to promote"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          CHANGE_SUMMARY=$(git log origin/master..staging --pretty=format:'- %s' --no-merges | head -20)
+          git commit -m "Release v${NEW}
+
+          Changes from staging:
+          ${CHANGE_SUMMARY}"
+
+          # Bump version in workspace Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"${NEW}\"/" Cargo.toml
+          git add Cargo.toml
+          git commit -m "chore: bump version to ${NEW}"
+
+          git push origin "$BRANCH" --force
+
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Create PR to master with auto-merge
+        if: steps.check.outputs.skip != 'true' && steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="${{ steps.version.outputs.branch }}"
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --base master --json number -q '.[0].number' || echo "")
+
+          BODY="Automated release PR from staging.
+
+          **Version:** ${VERSION}
+          **Bump type:** ${{ steps.bump_type.outputs.type }}
+
+          ### Changes included
+          $(git log origin/master..origin/staging --pretty=format:'- %s' --no-merges | head -20)
+
+          ---
+          This PR will auto-merge when checks pass."
+
+          if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
+            echo "Updating existing PR #$EXISTING_PR"
+            gh pr edit "$EXISTING_PR" --body "$BODY"
+          else
+            gh pr create \
+              --base master \
+              --head "$BRANCH" \
+              --title "Release v${VERSION}" \
+              --body "$BODY"
+          fi

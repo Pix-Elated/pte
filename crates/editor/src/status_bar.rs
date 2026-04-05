@@ -25,9 +25,9 @@ pub fn show(ui: &mut egui::Ui, state: &EditorState) {
         let z_label = if z == s {
             format!("Z:{} Ground", z)
         } else if z < s {
-            format!("Z:{} Sky+{}", z, s - z)
+            format!("Z:{} +{}", z, s - z)
         } else {
-            format!("Z:{} UG-{}", z, z - s)
+            format!("Z:{} -{}", z, z - s)
         };
         ui.label(text_style(&z_label));
 

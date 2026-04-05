@@ -10,6 +10,7 @@ use super::{Brush, BrushId, BrushStroke, BrushType};
 
 /// A creature definition.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CreatureDef {
     pub name: String,
     pub look_id: u16,
@@ -21,7 +22,6 @@ pub struct CreatureDef {
 pub struct CreatureBrush {
     pub brush_id: BrushId,
     pub creature: CreatureDef,
-    pub spawn_radius: u8,
 }
 
 impl CreatureBrush {
@@ -29,7 +29,6 @@ impl CreatureBrush {
         Self {
             brush_id: id,
             creature,
-            spawn_radius: 5,
         }
     }
 }
@@ -79,6 +78,7 @@ impl Brush for CreatureBrush {
 }
 
 /// Spawn brush — creates a spawn area on the map.
+#[allow(dead_code)]
 pub struct SpawnBrush {
     pub brush_id: BrushId,
     pub radius: u8,
