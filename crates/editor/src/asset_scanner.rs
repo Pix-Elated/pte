@@ -230,9 +230,9 @@ fn build_project(
 
         // Is this the main map?
         let stem = map_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let is_main = map_name.as_deref().map_or(false, |mn| stem == mn);
+        let is_main = map_name.as_deref() == Some(stem);
         // Also treat top-level .otbm files as potential mains
-        let is_top_level = rel.parent().map_or(true, |p| p == Path::new(""));
+        let is_top_level = rel.parent().is_none_or(|p| p == Path::new(""));
 
         if is_main {
             project.main_map = Some(entry);
@@ -246,7 +246,7 @@ fn build_project(
             project.event_maps.push(entry);
         } else if is_top_level && project.main_map.is_none() {
             // If no mapName configured, the largest top-level .otbm is probably the main map
-            if project.main_map.as_ref().map_or(true, |m| size > m.size) {
+            if project.main_map.as_ref().is_none_or(|m| size > m.size) {
                 // Swap: current main becomes other, this becomes main
                 if let Some(prev) = project.main_map.take() {
                     project.other_maps.push(prev);
@@ -526,6 +526,7 @@ fn format_size(bytes: u64) -> String {
 // ── Scanner state + UI ──
 
 /// Scanner state stored in EditorState.
+#[derive(Default)]
 pub struct ScannerState {
     pub scan_root: Option<PathBuf>,
     pub scan_result: Option<ScanResult>,
@@ -538,21 +539,9 @@ pub struct ScannerState {
     pub scanning: bool,
 }
 
-impl Default for ScannerState {
-    fn default() -> Self {
-        Self {
-            scan_root: None,
-            scan_result: None,
-            expanded_project: None,
-            open: false,
-            scan_rx: None,
-            scanning: false,
-        }
-    }
-}
-
 /// Action from the scanner dialog.
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum ScannerAction {
     None,
     /// Load a complete project: assets + main map + custom overlays

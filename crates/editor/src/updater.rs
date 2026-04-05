@@ -49,6 +49,7 @@ pub enum UpdateProgress {
 }
 
 /// The updater's persistent state.
+#[derive(Default)]
 pub struct UpdaterState {
     /// Channel receiving progress updates from background thread.
     pub progress_rx: Option<mpsc::Receiver<UpdateProgress>>,
@@ -64,20 +65,6 @@ pub struct UpdaterState {
     pub download_tx: Option<mpsc::Sender<bool>>,
     /// Whether we've started the check this session.
     pub check_started: bool,
-}
-
-impl Default for UpdaterState {
-    fn default() -> Self {
-        Self {
-            progress_rx: None,
-            last_progress: None,
-            show_ui: false,
-            dismissed: false,
-            auto_update: false,
-            download_tx: None,
-            check_started: false,
-        }
-    }
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────

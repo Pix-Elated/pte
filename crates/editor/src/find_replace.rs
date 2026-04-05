@@ -335,7 +335,7 @@ fn do_find_by_name(_ctx: &egui::Context, state: &mut EditorState) {
         .filter(|app| {
             app.name
                 .as_ref()
-                .map_or(false, |n| n.to_lowercase().contains(&query))
+                .is_some_and(|n| n.to_lowercase().contains(&query))
         })
         .filter_map(|app| app.id.map(|id| id as u16))
         .collect();
@@ -354,7 +354,7 @@ fn do_find_by_name(_ctx: &egui::Context, state: &mut EditorState) {
                 }
             }
 
-            let has_item = tile.ground.map_or(false, |g| matching_ids.contains(&g))
+            let has_item = tile.ground.is_some_and(|g| matching_ids.contains(&g))
                 || tile.items.iter().any(|it| {
                     if !matching_ids.contains(&it.id) {
                         return false;

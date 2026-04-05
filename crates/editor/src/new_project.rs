@@ -8,7 +8,6 @@
 //! - spawn.xml, houses.xml
 //! - Optional: fetch OTClient and/or Canary from GitHub releases
 
-use crate::state::EditorState;
 use crate::theme;
 use egui::Color32;
 use std::path::PathBuf;
@@ -814,7 +813,7 @@ fn create_blank_map(
     // Place a small spawn area at the center of the map (ground floor = z=7)
     let cx = width as u16 / 2;
     let cy = height as u16 / 2;
-    let z = crate::state::MAP_SURFACE_Z as u8;
+    let z = crate::state::MAP_SURFACE_Z;
 
     // 10×10 ground patch around center as a starting area
     for dy in 0..10u16 {
@@ -1050,7 +1049,7 @@ fn fetch_and_setup_canary(
         for entry in std::fs::read_dir(&canary_world)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "otbm") {
+            if path.extension().is_some_and(|e| e == "otbm") {
                 let _ = std::fs::remove_file(&path);
             }
         }
@@ -1120,7 +1119,7 @@ fn fetch_and_setup_otclient(
     download_file(&url, &zip_path)?;
 
     // Only extract if it's a zip (skip .7z for now — no native support)
-    if zip_path.extension().map_or(false, |e| e == "zip") {
+    if zip_path.extension().is_some_and(|e| e == "zip") {
         extract_zip(&zip_path, client_dir)?;
     }
 

@@ -1064,6 +1064,7 @@ fn handle_viewport_input(
 
 /// Draw a ghost preview of the sprite that will be placed.
 /// Returns true if a ghost sprite was drawn, false if nothing to preview.
+#[allow(clippy::too_many_arguments)]
 fn draw_brush_ghost(
     painter: &egui::Painter,
     rect: Rect,
@@ -1288,6 +1289,7 @@ pub(crate) fn resolve_appearance_sprite(
 /// Resolve an item ID to its current sprite texture and draw it.
 ///
 /// Handles: animation frames, oversized sprites (64x64 → 2x2 tiles).
+#[allow(clippy::too_many_arguments)]
 fn draw_item_sprite(
     painter: &egui::Painter,
     rect: Rect,
@@ -1342,6 +1344,7 @@ fn draw_item_sprite(
 }
 
 /// Like draw_item_sprite but with a custom alpha for ghost/preview rendering.
+#[allow(clippy::too_many_arguments)]
 fn draw_item_sprite_alpha(
     painter: &egui::Painter,
     rect: Rect,

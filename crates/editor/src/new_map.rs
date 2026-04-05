@@ -62,12 +62,15 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
 
             ui.horizontal(|ui| {
                 if ui.button("Create").clicked() {
-                    let mut map = pte_otbm::MapData::default();
-                    map.width = state.new_map_w as u16;
-                    map.height = state.new_map_h as u16;
-                    map.description = state.new_map_desc.clone();
+                    #[allow(clippy::field_reassign_with_default)]
+                    {
+                        let mut map = pte_otbm::MapData::default();
+                        map.width = state.new_map_w as u16;
+                        map.height = state.new_map_h as u16;
+                        map.description = state.new_map_desc.clone();
+                        state.map_data = Some(map);
+                    }
 
-                    state.map_data = Some(map);
                     state.map_path = None;
                     state.camera.center_x = state.new_map_w as f64 / 2.0;
                     state.camera.center_y = state.new_map_h as f64 / 2.0;

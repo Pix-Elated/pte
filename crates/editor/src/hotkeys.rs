@@ -4,7 +4,7 @@ use crate::state::EditorState;
 use crate::theme;
 
 /// A single hotkey slot.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HotkeySlot {
     /// Saved camera position (None = not set).
     pub position: Option<(f64, f64, u8)>,
@@ -12,16 +12,6 @@ pub struct HotkeySlot {
     pub item_id: Option<u32>,
     /// Label for display
     pub label: String,
-}
-
-impl Default for HotkeySlot {
-    fn default() -> Self {
-        Self {
-            position: None,
-            item_id: None,
-            label: String::new(),
-        }
-    }
 }
 
 /// Save the current camera position + active brush to a hotkey slot.

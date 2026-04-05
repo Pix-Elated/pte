@@ -85,7 +85,7 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> bool {
             }
 
             // Items (bottom-to-top, displayed top-to-bottom so topmost is first)
-            let items: Vec<_> = state.selective_eraser.items.iter().cloned().collect();
+            let items: Vec<_> = state.selective_eraser.items.to_vec();
             for (display_idx, (item_id, desc)) in items.iter().enumerate().rev() {
                 ui.horizontal(|ui| {
                     draw_item_preview(

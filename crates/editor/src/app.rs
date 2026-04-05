@@ -654,7 +654,7 @@ impl MapEditorApp {
                     .state
                     .map_data
                     .as_ref()
-                    .map_or(true, |m| m.spawn_file.is_empty())
+                    .is_none_or(|m| m.spawn_file.is_empty())
                 {
                     "spawn.xml".to_string()
                 } else {
@@ -773,11 +773,9 @@ impl MapEditorApp {
                     ui.close_menu();
                 }
 
-                if self.state.active_project.is_some() {
-                    if ui.button("Switch Map...").clicked() {
-                        self.state.show_map_switcher = true;
-                        ui.close_menu();
-                    }
+                if self.state.active_project.is_some() && ui.button("Switch Map...").clicked() {
+                    self.state.show_map_switcher = true;
+                    ui.close_menu();
                 }
 
                 // Recent files
@@ -1475,11 +1473,12 @@ impl eframe::App for MapEditorApp {
         crate::updater::show_ui(ctx, &mut self.state.updater);
 
         // Handle close confirmation for unsaved changes
-        if ctx.input(|i| i.viewport().close_requested()) {
-            if self.state.is_dirty() && !self.state.close_confirmed {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                self.state.show_close_confirm = true;
-            }
+        if ctx.input(|i| i.viewport().close_requested())
+            && self.state.is_dirty()
+            && !self.state.close_confirmed
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.state.show_close_confirm = true;
         }
 
         // Close confirmation dialog
@@ -2437,7 +2436,7 @@ impl MapEditorApp {
         }
 
         // Determine which sprite to load initially
-        let sid = app_ctx.current_sprite_id().or_else(|| {
+        let sid = app_ctx.current_sprite_id().or({
             // Fallback: direct sprite ID
             Some(item_id)
         });

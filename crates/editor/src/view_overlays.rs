@@ -56,26 +56,18 @@ pub fn highlight_color_for_item(
     let appearance = apps.get(appearances::Category::Object, item_id)?;
     let flags = appearance.flags.as_ref()?;
 
-    if state.highlight_pickupable {
-        if flags.take.is_some() {
-            return Some(Color32::from_rgba_unmultiplied(50, 200, 50, 40));
-        }
+    if state.highlight_pickupable && flags.take.is_some() {
+        return Some(Color32::from_rgba_unmultiplied(50, 200, 50, 40));
     }
-    if state.highlight_moveable {
-        if flags.unmove.is_none() && flags.bank.is_none() {
-            // Item is moveable if not explicitly unpassable and not ground
-            return Some(Color32::from_rgba_unmultiplied(50, 50, 200, 40));
-        }
+    if state.highlight_moveable && flags.unmove.is_none() && flags.bank.is_none() {
+        // Item is moveable if not explicitly unpassable and not ground
+        return Some(Color32::from_rgba_unmultiplied(50, 50, 200, 40));
     }
-    if state.highlight_blocking {
-        if flags.unpass.is_some() {
-            return Some(Color32::from_rgba_unmultiplied(200, 50, 50, 40));
-        }
+    if state.highlight_blocking && flags.unpass.is_some() {
+        return Some(Color32::from_rgba_unmultiplied(200, 50, 50, 40));
     }
-    if state.highlight_hooks {
-        if flags.hook.is_some() {
-            return Some(Color32::from_rgba_unmultiplied(200, 200, 50, 50));
-        }
+    if state.highlight_hooks && flags.hook.is_some() {
+        return Some(Color32::from_rgba_unmultiplied(200, 200, 50, 50));
     }
 
     None

@@ -192,11 +192,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     }
 
                     // Item properties
-                    if hover.is_some() {
-                        if ui.button("🔧 Properties...").clicked() {
-                            state.show_item_props = true;
-                            close_popup(ctx, popup_id);
-                        }
+                    if hover.is_some() && ui.button("🔧 Properties...").clicked() {
+                        state.show_item_props = true;
+                        close_popup(ctx, popup_id);
                     }
 
                     // Go to teleport destination

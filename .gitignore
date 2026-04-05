@@ -18,3 +18,4 @@ Thumbs.db
 # Python MCP server
 __pycache__/
 *.pyc
+clippy_out.txt

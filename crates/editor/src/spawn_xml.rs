@@ -121,9 +121,9 @@ pub fn write_spawns(spawns: &[Spawn], path: &Path) -> anyhow::Result<()> {
     let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<spawns>\n");
 
     for spawn in spawns {
-        write!(
+        writeln!(
             xml,
-            "\t<spawn centerx=\"{}\" centery=\"{}\" centerz=\"{}\" radius=\"{}\">\n",
+            "\t<spawn centerx=\"{}\" centery=\"{}\" centerz=\"{}\" radius=\"{}\">",
             spawn.center_x, spawn.center_y, spawn.center_z, spawn.radius
         )?;
         for c in &spawn.creatures {
@@ -133,9 +133,9 @@ pub fn write_spawns(spawns: &[Spawn], path: &Path) -> anyhow::Result<()> {
                 .replace('&', "&amp;")
                 .replace('"', "&quot;")
                 .replace('<', "&lt;");
-            write!(
+            writeln!(
                 xml,
-                "\t\t<{} name=\"{}\" x=\"{}\" y=\"{}\" z=\"{}\" spawntime=\"{}\" />\n",
+                "\t\t<{} name=\"{}\" x=\"{}\" y=\"{}\" z=\"{}\" spawntime=\"{}\" />",
                 tag, safe_name, c.offset_x, c.offset_y, c.z, c.spawn_time
             )?;
         }

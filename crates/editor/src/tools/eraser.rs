@@ -6,6 +6,7 @@ use pte_otbm::MapData;
 ///
 /// - `clear_all`: Shift-click removes the entire tile.
 /// - `flags_only`: Only clear zone flags and house_id, leave ground/items intact.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_eraser(
     map: &mut MapData,
     center_x: u16,

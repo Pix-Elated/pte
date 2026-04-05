@@ -66,6 +66,7 @@ pub enum LoadingStage {
 }
 
 /// State for the background loader.
+#[allow(clippy::type_complexity)]
 pub struct BackgroundLoader {
     /// Shared progress updated by the loading thread.
     pub progress: Option<std::sync::Arc<std::sync::Mutex<LoadingProgress>>>,

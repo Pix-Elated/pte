@@ -40,13 +40,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
             state.camera.z_level = z_surface;
         }
         if let Some(&last) = visible.last() {
-            if last != z_surface {
-                if compact_btn(
+            if last != z_surface
+                && compact_btn(
                     ui,
                     &format!("Bot ({})", z_level_label_short(last, z_surface)),
-                ) {
-                    state.camera.z_level = last;
-                }
+                )
+            {
+                state.camera.z_level = last;
             }
         }
     });

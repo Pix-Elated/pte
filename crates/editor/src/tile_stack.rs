@@ -105,27 +105,25 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                                             ui.with_layout(
                                                 egui::Layout::right_to_left(egui::Align::Center),
                                                 |ui| {
-                                                    if i + 1 < item_count {
-                                                        if ui
+                                                    if i + 1 < item_count
+                                                        && ui
                                                             .small_button("▼")
                                                             .on_hover_text(
                                                                 "Move down (higher in stack)",
                                                             )
                                                             .clicked()
-                                                        {
-                                                            swap = Some((i, i + 1));
-                                                        }
+                                                    {
+                                                        swap = Some((i, i + 1));
                                                     }
-                                                    if i > 0 {
-                                                        if ui
+                                                    if i > 0
+                                                        && ui
                                                             .small_button("▲")
                                                             .on_hover_text(
                                                                 "Move up (lower in stack)",
                                                             )
                                                             .clicked()
-                                                        {
-                                                            swap = Some((i, i - 1));
-                                                        }
+                                                    {
+                                                        swap = Some((i, i - 1));
                                                     }
                                                 },
                                             );

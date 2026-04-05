@@ -9,6 +9,7 @@ use pte_otbm::{MapData, MapItem};
 ///
 /// If `brush_id` is Some, looks up the registered brush and calls its `draw()`.
 /// Otherwise falls back to raw item placement using `item_id`.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_brush(
     map: &mut MapData,
     center_x: u16,
