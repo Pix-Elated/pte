@@ -5,7 +5,9 @@ use crate::state::{EditorState, TileClipboard, UndoAction};
 /// Copy the selected tiles into the clipboard buffer.
 pub fn copy_selection(state: &mut EditorState) {
     let Some(sel) = state.selection else { return };
-    let Some(ref map) = state.map_data else { return };
+    let Some(ref map) = state.map_data else {
+        return;
+    };
 
     let z = state.camera.z_level;
     let tiles = map.get_tiles_in_area(sel.x1, sel.y1, sel.x2, sel.y2, z);
@@ -33,7 +35,9 @@ pub fn cut_selection(state: &mut EditorState) {
 /// Delete all tiles in the current selection.
 pub fn delete_selection(state: &mut EditorState) {
     let Some(sel) = state.selection else { return };
-    let Some(ref mut map) = state.map_data else { return };
+    let Some(ref mut map) = state.map_data else {
+        return;
+    };
     let z = state.camera.z_level;
 
     let mut before = Vec::new();
@@ -63,8 +67,12 @@ pub fn delete_selection(state: &mut EditorState) {
 /// Paste the clipboard buffer at the given world position.
 /// Preserves relative z-offset from the original copy z-level.
 pub fn paste_at(state: &mut EditorState, target_x: u16, target_y: u16) {
-    let Some(ref clip) = state.clipboard else { return };
-    let Some(ref mut map) = state.map_data else { return };
+    let Some(ref clip) = state.clipboard else {
+        return;
+    };
+    let Some(ref mut map) = state.map_data else {
+        return;
+    };
     let target_z = state.camera.z_level;
 
     let mut before = Vec::new();

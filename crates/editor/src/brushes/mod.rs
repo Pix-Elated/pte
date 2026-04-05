@@ -3,22 +3,22 @@
 //! Brush types: RAW, Ground (auto-border), Wall (auto-align), Table, Carpet,
 //! Doodad (multi-tile), Door, Creature, Spawn, Waypoint, Flag, Eraser.
 
-pub mod shape;
 pub mod border;
-pub mod ground;
-pub mod wall;
-pub mod table;
 pub mod carpet;
+pub mod creature;
 pub mod doodad;
 pub mod door;
-pub mod creature;
 pub mod flag;
+pub mod ground;
 pub mod raw;
 pub mod registry;
+pub mod shape;
+pub mod table;
+pub mod wall;
 pub mod xml_loader;
 
-use pte_otbm::MapData;
 use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// Brush identifier.
 pub type BrushId = u32;
@@ -44,14 +44,12 @@ pub fn process_borders(
             if let Some(brush_id) = registry.ground_brush_id_for_item(ground_id) {
                 if let Some(brush) = registry.get(brush_id) {
                     if let Some(auto_border) = brush.outer_border() {
-                        let mask = border::compute_neighbor_mask(
-                            x, y, z, Some(brush_id),
-                            |nx, ny, nz| {
+                        let mask =
+                            border::compute_neighbor_mask(x, y, z, Some(brush_id), |nx, ny, nz| {
                                 map.get_tile(nx, ny, nz)
                                     .and_then(|t| t.ground)
                                     .and_then(|gid| registry.ground_brush_id_for_item(gid))
-                            },
-                        );
+                            });
 
                         if mask != 0 {
                             let items = border::get_border_items(mask, auto_border);
@@ -81,9 +79,8 @@ pub fn process_borders(
                 // Compute cardinal neighbor mask for wall alignment
                 let mask = {
                     let mut m: u8 = 0;
-                    let cardinals: [(i32, i32, u8); 4] = [
-                        (0, -1, 0x01), (1, 0, 0x02), (0, 1, 0x04), (-1, 0, 0x08),
-                    ];
+                    let cardinals: [(i32, i32, u8); 4] =
+                        [(0, -1, 0x01), (1, 0, 0x02), (0, 1, 0x04), (-1, 0, 0x08)];
                     for &(dx, dy, bit) in &cardinals {
                         let nx = x as i32 + dx;
                         let ny = y as i32 + dy;
@@ -140,29 +137,45 @@ pub trait Brush: Send + Sync {
     fn undraw(&self, map: &mut MapData, positions: &[(u16, u16, u8)]) -> BrushStroke;
 
     /// Whether this brush should trigger border recalculation on neighbors.
-    fn needs_border_update(&self) -> bool { false }
+    fn needs_border_update(&self) -> bool {
+        false
+    }
 
     /// Whether the brush can be dragged (painted continuously).
-    fn can_drag(&self) -> bool { true }
+    fn can_drag(&self) -> bool {
+        true
+    }
 
     /// Whether the brush applies to ground vs item stack.
-    fn is_ground(&self) -> bool { false }
+    fn is_ground(&self) -> bool {
+        false
+    }
 
     /// Return the outer border definition for auto-border processing.
     /// Only ground brushes have this.
-    fn outer_border(&self) -> Option<&border::AutoBorder> { None }
+    fn outer_border(&self) -> Option<&border::AutoBorder> {
+        None
+    }
 
     /// Return the item ID for a given wall alignment mask (N=1,E=2,S=4,W=8).
     /// Only wall brushes implement this.
-    fn wall_item_for_mask(&self, _mask: u8) -> Option<u16> { None }
+    fn wall_item_for_mask(&self, _mask: u8) -> Option<u16> {
+        None
+    }
 
     /// Return all item IDs that belong to this brush.
-    fn all_item_ids(&self) -> Vec<u16> { vec![self.look_id()] }
+    fn all_item_ids(&self) -> Vec<u16> {
+        vec![self.look_id()]
+    }
 
     /// Return a representative item ID for preview/ghost rendering.
     fn preview_item_id(&self) -> Option<u16> {
         let id = self.look_id();
-        if id > 0 { Some(id) } else { None }
+        if id > 0 {
+            Some(id)
+        } else {
+            None
+        }
     }
 }
 

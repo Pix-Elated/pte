@@ -12,14 +12,18 @@ pub struct CleanupResult {
 /// Remove all tiles that have no ground, no items, no flags, and no house_id.
 pub fn remove_empty_tiles(state: &mut EditorState) -> CleanupResult {
     let Some(ref mut map) = state.map_data else {
-        return CleanupResult { removed_count: 0, description: "No map loaded".into() };
+        return CleanupResult {
+            removed_count: 0,
+            description: "No map loaded".into(),
+        };
     };
 
     let mut removed = 0;
     let mut keys_to_clean = Vec::new();
 
     for (key, chunk) in &map.chunks {
-        let empties: Vec<(u8, u8)> = chunk.iter()
+        let empties: Vec<(u8, u8)> = chunk
+            .iter()
             .filter(|&(_, tile)| {
                 tile.ground.is_none()
                     && tile.items.is_empty()
@@ -57,7 +61,10 @@ pub fn remove_empty_tiles(state: &mut EditorState) -> CleanupResult {
 #[allow(dead_code)]
 pub fn remove_corpses(state: &mut EditorState, corpse_ids: &[u16]) -> CleanupResult {
     let Some(ref mut map) = state.map_data else {
-        return CleanupResult { removed_count: 0, description: "No map loaded".into() };
+        return CleanupResult {
+            removed_count: 0,
+            description: "No map loaded".into(),
+        };
     };
 
     let mut removed = 0;
@@ -80,7 +87,10 @@ pub fn remove_corpses(state: &mut EditorState, corpse_ids: &[u16]) -> CleanupRes
 /// Remove duplicate items stacked on the same tile (items with identical ID at the same position).
 pub fn remove_duplicate_items(state: &mut EditorState) -> CleanupResult {
     let Some(ref mut map) = state.map_data else {
-        return CleanupResult { removed_count: 0, description: "No map loaded".into() };
+        return CleanupResult {
+            removed_count: 0,
+            description: "No map loaded".into(),
+        };
     };
 
     let mut removed = 0;
@@ -103,7 +113,10 @@ pub fn remove_duplicate_items(state: &mut EditorState) -> CleanupResult {
 /// Clear house_id from tiles where the house doesn't exist in the houses list.
 pub fn clear_orphan_house_refs(state: &mut EditorState) -> CleanupResult {
     let Some(ref mut map) = state.map_data else {
-        return CleanupResult { removed_count: 0, description: "No map loaded".into() };
+        return CleanupResult {
+            removed_count: 0,
+            description: "No map loaded".into(),
+        };
     };
 
     let defined: std::collections::HashSet<u32> = map.houses.iter().map(|h| h.id).collect();
@@ -150,17 +163,26 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
             );
             ui.add_space(6.0);
 
-            if ui.add_enabled(has_map, egui::Button::new("Remove empty tiles")).clicked() {
+            if ui
+                .add_enabled(has_map, egui::Button::new("Remove empty tiles"))
+                .clicked()
+            {
                 let result = remove_empty_tiles(state);
                 state.cleanup_last_result = Some(result.description);
             }
 
-            if ui.add_enabled(has_map, egui::Button::new("Remove duplicate items")).clicked() {
+            if ui
+                .add_enabled(has_map, egui::Button::new("Remove duplicate items"))
+                .clicked()
+            {
                 let result = remove_duplicate_items(state);
                 state.cleanup_last_result = Some(result.description);
             }
 
-            if ui.add_enabled(has_map, egui::Button::new("Clear orphan house references")).clicked() {
+            if ui
+                .add_enabled(has_map, egui::Button::new("Clear orphan house references"))
+                .clicked()
+            {
                 let result = clear_orphan_house_refs(state);
                 state.cleanup_last_result = Some(result.description);
             }

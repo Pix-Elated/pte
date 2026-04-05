@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
-use pte_otbm::MapData;
 use crate::state::UndoAction;
+use pte_otbm::MapData;
+use std::collections::VecDeque;
 
 /// Flood fill (4-connected) at the given position.
 /// Replaces ground items matching the target with the new item.
@@ -13,9 +13,7 @@ pub fn apply_fill(
     z: u8,
     new_item_id: u16,
 ) -> UndoAction {
-    let target_ground = map
-        .get_tile(start_x, start_y, z)
-        .and_then(|t| t.ground);
+    let target_ground = map.get_tile(start_x, start_y, z).and_then(|t| t.ground);
 
     // Don't fill if already the same
     if target_ground == Some(new_item_id) {

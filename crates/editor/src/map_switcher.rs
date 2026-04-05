@@ -74,12 +74,54 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> MapSwitcherAction {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    map_section(ui, "Main Map", project.main_map.as_slice(), theme::SUCCESS, state, &mut action);
-                    map_section(ui, "Custom Overlays", &project.custom_maps, theme::ACCENT, state, &mut action);
-                    map_section(ui, "Quest Maps", &project.quest_maps, egui::Color32::from_rgb(180, 140, 255), state, &mut action);
-                    map_section(ui, "World Changes", &project.world_change_maps, egui::Color32::from_rgb(255, 180, 100), state, &mut action);
-                    map_section(ui, "Events", &project.event_maps, egui::Color32::from_rgb(100, 200, 255), state, &mut action);
-                    map_section(ui, "Other", &project.other_maps, theme::TEXT_MUTED, state, &mut action);
+                    map_section(
+                        ui,
+                        "Main Map",
+                        project.main_map.as_slice(),
+                        theme::SUCCESS,
+                        state,
+                        &mut action,
+                    );
+                    map_section(
+                        ui,
+                        "Custom Overlays",
+                        &project.custom_maps,
+                        theme::ACCENT,
+                        state,
+                        &mut action,
+                    );
+                    map_section(
+                        ui,
+                        "Quest Maps",
+                        &project.quest_maps,
+                        egui::Color32::from_rgb(180, 140, 255),
+                        state,
+                        &mut action,
+                    );
+                    map_section(
+                        ui,
+                        "World Changes",
+                        &project.world_change_maps,
+                        egui::Color32::from_rgb(255, 180, 100),
+                        state,
+                        &mut action,
+                    );
+                    map_section(
+                        ui,
+                        "Events",
+                        &project.event_maps,
+                        egui::Color32::from_rgb(100, 200, 255),
+                        state,
+                        &mut action,
+                    );
+                    map_section(
+                        ui,
+                        "Other",
+                        &project.other_maps,
+                        theme::TEXT_MUTED,
+                        state,
+                        &mut action,
+                    );
                 });
         });
 
@@ -122,7 +164,9 @@ fn map_section(
                 theme::TEXT_PRIMARY
             };
 
-            let name = entry.path.file_name()
+            let name = entry
+                .path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(&entry.label);
             let size = format_size(entry.size);
@@ -138,12 +182,8 @@ fn map_section(
             } else {
                 // Clickable to switch
                 let resp = ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(&display)
-                            .size(10.5)
-                            .color(text_color),
-                    )
-                    .sense(egui::Sense::click()),
+                    egui::Label::new(egui::RichText::new(&display).size(10.5).color(text_color))
+                        .sense(egui::Sense::click()),
                 );
                 if resp.clicked() {
                     *action = MapSwitcherAction::LoadMap(entry.path.clone());

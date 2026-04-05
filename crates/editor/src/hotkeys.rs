@@ -4,7 +4,7 @@ use crate::state::EditorState;
 use crate::theme;
 
 /// A single hotkey slot.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HotkeySlot {
     /// Saved camera position (None = not set).
     pub position: Option<(f64, f64, u8)>,
@@ -14,19 +14,11 @@ pub struct HotkeySlot {
     pub label: String,
 }
 
-impl Default for HotkeySlot {
-    fn default() -> Self {
-        Self {
-            position: None,
-            item_id: None,
-            label: String::new(),
-        }
-    }
-}
-
 /// Save the current camera position + active brush to a hotkey slot.
 pub fn save_hotkey(state: &mut EditorState, slot: usize) {
-    if slot >= state.hotkeys.len() { return; }
+    if slot >= state.hotkeys.len() {
+        return;
+    }
     state.hotkeys[slot].position = Some((
         state.camera.center_x,
         state.camera.center_y,
@@ -41,7 +33,9 @@ pub fn save_hotkey(state: &mut EditorState, slot: usize) {
 
 /// Jump to a hotkey position and optionally activate its brush.
 pub fn recall_hotkey(state: &mut EditorState, slot: usize) {
-    if slot >= state.hotkeys.len() { return; }
+    if slot >= state.hotkeys.len() {
+        return;
+    }
     // Copy data out to avoid borrow conflict
     let position = state.hotkeys[slot].position;
     let item_id = state.hotkeys[slot].item_id;
@@ -104,7 +98,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                                         .color(theme::TEXT_MUTED),
                                 );
                             } else {
-                                ui.label(egui::RichText::new("—").size(10.0).color(theme::TEXT_MUTED));
+                                ui.label(
+                                    egui::RichText::new("—").size(10.0).color(theme::TEXT_MUTED),
+                                );
                             }
 
                             if ui.small_button("Goto").clicked() {

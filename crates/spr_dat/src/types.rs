@@ -117,7 +117,7 @@ pub struct DatEntry {
 /// These use byte markers: the attribute byte indicates what follows.
 #[derive(Debug, Clone, Default)]
 pub struct DatFlags {
-    pub is_ground: Option<u16>,       // speed
+    pub is_ground: Option<u16>, // speed
     pub is_ground_border: bool,
     pub is_on_bottom: bool,
     pub is_on_top: bool,
@@ -125,7 +125,7 @@ pub struct DatFlags {
     pub is_stackable: bool,
     pub is_force_use: bool,
     pub is_multi_use: bool,
-    pub is_writable: Option<u16>,     // max text length
+    pub is_writable: Option<u16>, // max text length
     pub is_writable_once: Option<u16>,
     pub is_fluid_container: bool,
     pub is_splash: bool,
@@ -149,7 +149,7 @@ pub struct DatFlags {
     pub has_lens_help: Option<u16>,
     pub is_full_ground: bool,
     pub ignore_look: bool,
-    pub is_cloth: Option<u16>,        // slot
+    pub is_cloth: Option<u16>, // slot
     pub is_market_item: Option<MarketData>,
     pub has_default_action: Option<u16>,
     pub is_usable: bool,

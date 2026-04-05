@@ -67,9 +67,21 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
         });
 
     if do_goto {
-        let x = state.goto_x.trim().parse::<f64>().unwrap_or(state.camera.center_x);
-        let y = state.goto_y.trim().parse::<f64>().unwrap_or(state.camera.center_y);
-        let z = state.goto_z.trim().parse::<u8>().unwrap_or(state.camera.z_level);
+        let x = state
+            .goto_x
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(state.camera.center_x);
+        let y = state
+            .goto_y
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(state.camera.center_y);
+        let z = state
+            .goto_z
+            .trim()
+            .parse::<u8>()
+            .unwrap_or(state.camera.z_level);
 
         crate::nav_history::record(state);
         state.camera.center_x = x.clamp(0.0, 65535.0);

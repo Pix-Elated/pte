@@ -8,7 +8,11 @@ use crate::theme;
 pub enum HouseAction {
     None,
     /// Navigate camera to a house exit position.
-    GoTo { x: u16, y: u16, z: u8 },
+    GoTo {
+        x: u16,
+        y: u16,
+        z: u8,
+    },
 }
 
 pub fn show(ctx: &egui::Context, state: &mut EditorState) -> HouseAction {
@@ -32,14 +36,21 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> HouseAction {
 
             // ── Add new house ──
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("New:").size(11.0).color(theme::TEXT_SECONDARY));
+                ui.label(
+                    egui::RichText::new("New:")
+                        .size(11.0)
+                        .color(theme::TEXT_SECONDARY),
+                );
                 ui.add(
                     egui::TextEdit::singleline(&mut state.house_new_name)
                         .desired_width(140.0)
                         .hint_text("House name"),
                 );
                 let can_add = !state.house_new_name.trim().is_empty();
-                if ui.add_enabled(can_add, egui::Button::new("+ Add")).clicked() {
+                if ui
+                    .add_enabled(can_add, egui::Button::new("+ Add"))
+                    .clicked()
+                {
                     let next_id = map.houses.iter().map(|h| h.id).max().unwrap_or(0) + 1;
                     let name = state.house_new_name.trim().to_string();
                     map.houses.push(pte_otbm::House {
@@ -62,7 +73,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> HouseAction {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 if let Some(hid) = state.active_house_id {
-                    let name = map.houses.iter()
+                    let name = map
+                        .houses
+                        .iter()
                         .find(|h| h.id == hid)
                         .map(|h| h.name.as_str())
                         .unwrap_or("???");
@@ -199,7 +212,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> HouseAction {
                                                     };
                                                 }
 
-                                                let paint_label = if is_active { "■ Stop" } else { "🖌 Paint" };
+                                                let paint_label = if is_active {
+                                                    "■ Stop"
+                                                } else {
+                                                    "🖌 Paint"
+                                                };
                                                 if ui
                                                     .small_button(paint_label)
                                                     .on_hover_text("Select as active house brush")
@@ -218,11 +235,17 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> HouseAction {
                                     // Properties row
                                     ui.horizontal(|ui| {
                                         ui.label(
-                                            egui::RichText::new("Rent:").size(9.5).color(theme::TEXT_MUTED),
+                                            egui::RichText::new("Rent:")
+                                                .size(9.5)
+                                                .color(theme::TEXT_MUTED),
                                         );
                                         let mut rent = house.rent as i64;
                                         if ui
-                                            .add(egui::DragValue::new(&mut rent).range(0..=1_000_000).speed(10))
+                                            .add(
+                                                egui::DragValue::new(&mut rent)
+                                                    .range(0..=1_000_000)
+                                                    .speed(10),
+                                            )
                                             .changed()
                                         {
                                             house.rent = rent.max(0) as u32;
@@ -231,11 +254,17 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> HouseAction {
                                         ui.add_space(8.0);
 
                                         ui.label(
-                                            egui::RichText::new("Town:").size(9.5).color(theme::TEXT_MUTED),
+                                            egui::RichText::new("Town:")
+                                                .size(9.5)
+                                                .color(theme::TEXT_MUTED),
                                         );
                                         let mut tid = house.town_id as i64;
                                         if ui
-                                            .add(egui::DragValue::new(&mut tid).range(0..=9999).speed(1))
+                                            .add(
+                                                egui::DragValue::new(&mut tid)
+                                                    .range(0..=9999)
+                                                    .speed(1),
+                                            )
                                             .changed()
                                         {
                                             house.town_id = tid.max(0) as u32;
@@ -245,26 +274,62 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> HouseAction {
                                     // Exit position
                                     ui.horizontal(|ui| {
                                         ui.label(
-                                            egui::RichText::new("Exit:").size(9.5).color(theme::TEXT_MUTED),
+                                            egui::RichText::new("Exit:")
+                                                .size(9.5)
+                                                .color(theme::TEXT_MUTED),
                                         );
                                         let mut x = house.exit.x as i32;
                                         let mut y = house.exit.y as i32;
                                         let mut z = house.exit.z as i32;
 
-                                        ui.label(egui::RichText::new("X").size(9.0).color(theme::TEXT_MUTED));
-                                        if ui.add(egui::DragValue::new(&mut x).range(0..=65535).speed(1)).changed() {
+                                        ui.label(
+                                            egui::RichText::new("X")
+                                                .size(9.0)
+                                                .color(theme::TEXT_MUTED),
+                                        );
+                                        if ui
+                                            .add(
+                                                egui::DragValue::new(&mut x)
+                                                    .range(0..=65535)
+                                                    .speed(1),
+                                            )
+                                            .changed()
+                                        {
                                             house.exit.x = x.clamp(0, 65535) as u16;
                                         }
-                                        ui.label(egui::RichText::new("Y").size(9.0).color(theme::TEXT_MUTED));
-                                        if ui.add(egui::DragValue::new(&mut y).range(0..=65535).speed(1)).changed() {
+                                        ui.label(
+                                            egui::RichText::new("Y")
+                                                .size(9.0)
+                                                .color(theme::TEXT_MUTED),
+                                        );
+                                        if ui
+                                            .add(
+                                                egui::DragValue::new(&mut y)
+                                                    .range(0..=65535)
+                                                    .speed(1),
+                                            )
+                                            .changed()
+                                        {
                                             house.exit.y = y.clamp(0, 65535) as u16;
                                         }
-                                        ui.label(egui::RichText::new("Z").size(9.0).color(theme::TEXT_MUTED));
-                                        if ui.add(egui::DragValue::new(&mut z).range(0..=41).speed(0.1)).changed() {
+                                        ui.label(
+                                            egui::RichText::new("Z")
+                                                .size(9.0)
+                                                .color(theme::TEXT_MUTED),
+                                        );
+                                        if ui
+                                            .add(
+                                                egui::DragValue::new(&mut z)
+                                                    .range(0..=41)
+                                                    .speed(0.1),
+                                            )
+                                            .changed()
+                                        {
                                             house.exit.z = z.clamp(0, 41) as u8;
                                         }
 
-                                        if ui.small_button("⊕")
+                                        if ui
+                                            .small_button("⊕")
                                             .on_hover_text("Set exit to camera pos")
                                             .clicked()
                                         {

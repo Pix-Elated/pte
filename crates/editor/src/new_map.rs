@@ -21,7 +21,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Width:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("Width:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     ui.add(
                         egui::DragValue::new(&mut state.new_map_w)
                             .range(64..=65535)
@@ -29,7 +33,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     );
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Height:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("Height:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     ui.add(
                         egui::DragValue::new(&mut state.new_map_h)
                             .range(64..=65535)
@@ -37,7 +45,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     );
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Description:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("Description:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     ui.add(
                         egui::TextEdit::singleline(&mut state.new_map_desc)
                             .desired_width(160.0)
@@ -50,12 +62,15 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
 
             ui.horizontal(|ui| {
                 if ui.button("Create").clicked() {
-                    let mut map = pte_otbm::MapData::default();
-                    map.width = state.new_map_w as u16;
-                    map.height = state.new_map_h as u16;
-                    map.description = state.new_map_desc.clone();
+                    #[allow(clippy::field_reassign_with_default)]
+                    {
+                        let mut map = pte_otbm::MapData::default();
+                        map.width = state.new_map_w as u16;
+                        map.height = state.new_map_h as u16;
+                        map.description = state.new_map_desc.clone();
+                        state.map_data = Some(map);
+                    }
 
-                    state.map_data = Some(map);
                     state.map_path = None;
                     state.camera.center_x = state.new_map_w as f64 / 2.0;
                     state.camera.center_y = state.new_map_h as f64 / 2.0;

@@ -36,29 +36,38 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> bool {
                 ui.horizontal(|ui| {
                     // Preview sprite
                     let preview_rect = draw_item_preview(
-                        ui, state.selective_eraser.ground_id,
-                        &state.appearances, &mut state.sprite_textures,
-                        &state.sprite_sheets, ctx,
+                        ui,
+                        state.selective_eraser.ground_id,
+                        &state.appearances,
+                        &mut state.sprite_textures,
+                        &state.sprite_sheets,
+                        ctx,
                     );
                     let _ = preview_rect;
 
                     ui.label(
-                        egui::RichText::new(format!("Ground #{}", state.selective_eraser.ground_id))
-                            .size(11.0)
-                            .color(theme::TEXT_PRIMARY),
+                        egui::RichText::new(format!(
+                            "Ground #{}",
+                            state.selective_eraser.ground_id
+                        ))
+                        .size(11.0)
+                        .color(theme::TEXT_PRIMARY),
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(
-                            egui::Button::new(
-                                egui::RichText::new("✕ Delete")
-                                    .size(10.0)
-                                    .color(egui::Color32::WHITE),
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("✕ Delete")
+                                        .size(10.0)
+                                        .color(egui::Color32::WHITE),
+                                )
+                                .fill(theme::ERROR)
+                                .corner_radius(egui::CornerRadius::same(3))
+                                .min_size(egui::vec2(60.0, 20.0)),
                             )
-                            .fill(theme::ERROR)
-                            .corner_radius(egui::CornerRadius::same(3))
-                            .min_size(egui::vec2(60.0, 20.0))
-                        ).clicked() {
+                            .clicked()
+                        {
                             if let Some(ref mut map) = state.map_data {
                                 let action = crate::tools::eraser::erase_specific(
                                     map, tx, ty, tz, None, true,
@@ -76,13 +85,16 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> bool {
             }
 
             // Items (bottom-to-top, displayed top-to-bottom so topmost is first)
-            let items: Vec<_> = state.selective_eraser.items.iter().cloned().collect();
+            let items: Vec<_> = state.selective_eraser.items.to_vec();
             for (display_idx, (item_id, desc)) in items.iter().enumerate().rev() {
                 ui.horizontal(|ui| {
                     draw_item_preview(
-                        ui, *item_id,
-                        &state.appearances, &mut state.sprite_textures,
-                        &state.sprite_sheets, ctx,
+                        ui,
+                        *item_id,
+                        &state.appearances,
+                        &mut state.sprite_textures,
+                        &state.sprite_sheets,
+                        ctx,
                     );
 
                     ui.label(
@@ -92,16 +104,19 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> bool {
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(
-                            egui::Button::new(
-                                egui::RichText::new("✕ Delete")
-                                    .size(10.0)
-                                    .color(egui::Color32::WHITE),
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("✕ Delete")
+                                        .size(10.0)
+                                        .color(egui::Color32::WHITE),
+                                )
+                                .fill(theme::ERROR)
+                                .corner_radius(egui::CornerRadius::same(3))
+                                .min_size(egui::vec2(60.0, 20.0)),
                             )
-                            .fill(theme::ERROR)
-                            .corner_radius(egui::CornerRadius::same(3))
-                            .min_size(egui::vec2(60.0, 20.0))
-                        ).clicked() {
+                            .clicked()
+                        {
                             if let Some(ref mut map) = state.map_data {
                                 let action = crate::tools::eraser::erase_specific(
                                     map,
@@ -156,7 +171,8 @@ fn draw_item_preview(
             if let Some(sid) = crate::viewport::resolve_appearance_sprite(appearance, 0, false, 0) {
                 if let Some(tex) = crate::viewport::get_or_upload(textures, sheets, ctx, sid) {
                     ui.painter().image(
-                        tex.id(), rect,
+                        tex.id(),
+                        rect,
                         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
                         egui::Color32::WHITE,
                     );

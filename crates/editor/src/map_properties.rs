@@ -26,7 +26,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                 .num_columns(2)
                 .spacing([10.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Description:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("Description:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     ui.add(
                         egui::TextEdit::multiline(&mut map.description)
                             .desired_width(240.0)
@@ -34,21 +38,39 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     );
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Width:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("Width:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     let mut w = map.width as i32;
-                    if ui.add(egui::DragValue::new(&mut w).range(1..=65535).speed(1)).changed() {
+                    if ui
+                        .add(egui::DragValue::new(&mut w).range(1..=65535).speed(1))
+                        .changed()
+                    {
                         map.width = w.clamp(1, 65535) as u16;
                     }
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Height:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("Height:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     let mut h = map.height as i32;
-                    if ui.add(egui::DragValue::new(&mut h).range(1..=65535).speed(1)).changed() {
+                    if ui
+                        .add(egui::DragValue::new(&mut h).range(1..=65535).speed(1))
+                        .changed()
+                    {
                         map.height = h.clamp(1, 65535) as u16;
                     }
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Spawn File:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("Spawn File:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     ui.add(
                         egui::TextEdit::singleline(&mut map.spawn_file)
                             .desired_width(200.0)
@@ -56,7 +78,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     );
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("House File:").size(11.0).color(theme::TEXT_SECONDARY));
+                    ui.label(
+                        egui::RichText::new("House File:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
                     ui.add(
                         egui::TextEdit::singleline(&mut map.house_file)
                             .desired_width(200.0)
@@ -64,16 +90,40 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     );
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("OTBM Version:").size(11.0).color(theme::TEXT_SECONDARY));
-                    ui.label(egui::RichText::new(format!("{}", map.version)).size(11.0).color(theme::TEXT_PRIMARY));
+                    ui.label(
+                        egui::RichText::new("OTBM Version:")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("{}", map.version))
+                            .size(11.0)
+                            .color(theme::TEXT_PRIMARY),
+                    );
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Items (major):").size(11.0).color(theme::TEXT_SECONDARY));
-                    ui.label(egui::RichText::new(format!("{}", map.item_major_version)).size(11.0).color(theme::TEXT_PRIMARY));
+                    ui.label(
+                        egui::RichText::new("Items (major):")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("{}", map.item_major_version))
+                            .size(11.0)
+                            .color(theme::TEXT_PRIMARY),
+                    );
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Items (minor):").size(11.0).color(theme::TEXT_SECONDARY));
-                    ui.label(egui::RichText::new(format!("{}", map.item_minor_version)).size(11.0).color(theme::TEXT_PRIMARY));
+                    ui.label(
+                        egui::RichText::new("Items (minor):")
+                            .size(11.0)
+                            .color(theme::TEXT_SECONDARY),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("{}", map.item_minor_version))
+                            .size(11.0)
+                            .color(theme::TEXT_PRIMARY),
+                    );
                     ui.end_row();
                 });
         });

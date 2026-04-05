@@ -7,7 +7,10 @@ use std::path::Path;
 
 /// Generated protobuf types.
 pub mod proto {
-    include!(concat!(env!("OUT_DIR"), "/otclient.protobuf.appearances.rs"));
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/otclient.protobuf.appearances.rs"
+    ));
 }
 
 /// Re-export key types.
@@ -81,8 +84,7 @@ pub fn load_appearances(path: &Path) -> Result<LoadedAppearances> {
 
 /// Parse appearances from raw protobuf bytes.
 pub fn parse_appearances(data: &[u8]) -> Result<LoadedAppearances> {
-    let appearances =
-        Appearances::decode(data).context("decoding appearances protobuf")?;
+    let appearances = Appearances::decode(data).context("decoding appearances protobuf")?;
 
     let mut loaded = LoadedAppearances::default();
 
@@ -148,7 +150,9 @@ pub fn serialize_appearances(loaded: &LoadedAppearances) -> Result<Vec<u8>> {
     };
 
     let mut buf = Vec::with_capacity(appearances.encoded_len());
-    appearances.encode(&mut buf).context("encoding appearances protobuf")?;
+    appearances
+        .encode(&mut buf)
+        .context("encoding appearances protobuf")?;
     Ok(buf)
 }
 
@@ -160,7 +164,11 @@ pub fn save_appearances(loaded: &LoadedAppearances, path: &Path) -> Result<()> {
 }
 
 /// Add or replace an appearance in the loaded set.
-pub fn upsert_appearance(loaded: &mut LoadedAppearances, category: Category, appearance: Appearance) {
+pub fn upsert_appearance(
+    loaded: &mut LoadedAppearances,
+    category: Category,
+    appearance: Appearance,
+) {
     let id = appearance.id();
     let map = match category {
         Category::Object => &mut loaded.objects,

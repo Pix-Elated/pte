@@ -5,7 +5,9 @@ use rand::Rng;
 
 /// Borderize selection — recalculate auto-borders for all tiles in the selection.
 pub fn borderize_selection(state: &mut EditorState) {
-    let Some(ref sel) = state.selection else { return };
+    let Some(ref sel) = state.selection else {
+        return;
+    };
     let sel = *sel;
     let z = state.camera.z_level;
 
@@ -27,7 +29,9 @@ pub fn borderize_selection(state: &mut EditorState) {
 /// Randomize selection — for any ground tile that has variants in the brush registry,
 /// swap to a random variant.
 pub fn randomize_selection(state: &mut EditorState) {
-    let Some(ref sel) = state.selection else { return };
+    let Some(ref sel) = state.selection else {
+        return;
+    };
     let sel = *sel;
     let z = state.camera.z_level;
 
@@ -48,7 +52,9 @@ pub fn randomize_selection(state: &mut EditorState) {
         }
     }
 
-    if tile_variants.is_empty() { return; }
+    if tile_variants.is_empty() {
+        return;
+    }
 
     // Second pass: apply random variants (mutable borrow)
     let mut rng = rand::rng();

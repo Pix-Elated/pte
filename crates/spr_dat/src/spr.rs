@@ -14,7 +14,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
-use crate::types::{Sprite, SprFile};
+use crate::types::{SprFile, Sprite};
 
 /// Parse SPR from a file path.
 pub fn parse_spr(path: &Path) -> Result<SprFile> {
@@ -34,18 +34,17 @@ pub fn parse_spr_bytes(data: &[u8]) -> Result<SprFile> {
     let count_u32 = r.read_u32::<LittleEndian>()?;
     let remaining_after_u32 = data.len() as u64 - r.position();
 
-    let (sprite_count, extended) = if count_u32 > 0
-        && (count_u32 as u64) * 4 <= remaining_after_u32 + 4
-        && count_u32 > 0xFFFF
-    {
-        // Extended: u32 count
-        (count_u32, true)
-    } else {
-        // Standard: u16 count — rewind
-        r.set_position(pos_after_sig);
-        let count = r.read_u16::<LittleEndian>()? as u32;
-        (count, false)
-    };
+    let (sprite_count, extended) =
+        if count_u32 > 0 && (count_u32 as u64) * 4 <= remaining_after_u32 + 4 && count_u32 > 0xFFFF
+        {
+            // Extended: u32 count
+            (count_u32, true)
+        } else {
+            // Standard: u16 count — rewind
+            r.set_position(pos_after_sig);
+            let count = r.read_u16::<LittleEndian>()? as u32;
+            (count, false)
+        };
 
     tracing::info!(
         sprite_count,
@@ -69,7 +68,11 @@ pub fn parse_spr_bytes(data: &[u8]) -> Result<SprFile> {
         }
 
         if offset as usize >= data.len() {
-            tracing::warn!("Sprite {} offset {} out of bounds, using blank", i + 1, offset);
+            tracing::warn!(
+                "Sprite {} offset {} out of bounds, using blank",
+                i + 1,
+                offset
+            );
             sprites.push(Sprite::new_transparent());
             continue;
         }
@@ -145,10 +148,10 @@ fn decode_sprite(data: &[u8]) -> Result<Sprite> {
 
             let byte_idx = pixel_idx * 4;
             // BGR → RGBA
-            pixels[byte_idx] = bgra[2];     // R
+            pixels[byte_idx] = bgra[2]; // R
             pixels[byte_idx + 1] = bgra[1]; // G
             pixels[byte_idx + 2] = bgra[0]; // B
-            pixels[byte_idx + 3] = 0xFF;    // A = opaque
+            pixels[byte_idx + 3] = 0xFF; // A = opaque
 
             pixel_idx += 1;
         }
@@ -175,7 +178,10 @@ pub fn serialize_spr_bytes(spr: &SprFile) -> Result<Vec<u8>> {
         out.write_u32::<LittleEndian>(count)?;
     } else {
         if count > 0xFFFF {
-            bail!("Sprite count {} exceeds u16 max for non-extended SPR", count);
+            bail!(
+                "Sprite count {} exceeds u16 max for non-extended SPR",
+                count
+            );
         }
         out.write_u16::<LittleEndian>(count as u16)?;
     }
@@ -301,7 +307,7 @@ mod tests {
         // Set a few pixels
         sprite.pixels[0] = 255; // R
         sprite.pixels[1] = 128; // G
-        sprite.pixels[2] = 64;  // B
+        sprite.pixels[2] = 64; // B
         sprite.pixels[3] = 255; // A
 
         sprite.pixels[4] = 0;
@@ -322,7 +328,7 @@ mod tests {
         let s = &parsed.sprites[0];
         assert_eq!(s.pixels[0], 255); // R preserved
         assert_eq!(s.pixels[1], 128); // G preserved
-        assert_eq!(s.pixels[2], 64);  // B preserved
+        assert_eq!(s.pixels[2], 64); // B preserved
         assert_eq!(s.pixels[3], 255); // A preserved
     }
 

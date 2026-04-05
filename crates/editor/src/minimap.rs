@@ -1,8 +1,8 @@
 //! Minimap panel — bird's-eye view of the current z-level with click-to-navigate.
 
-use egui::{Color32, Pos2, Rect, Sense};
 use crate::state::EditorState;
 use crate::theme;
+use egui::{Color32, Pos2, Rect, Sense};
 
 /// Default minimap render size in pixels.
 const MINIMAP_SIZE: f32 = 200.0;
@@ -45,10 +45,8 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
             let render_w = map_w * scale;
             let render_h = map_h * scale;
 
-            let (resp, painter) = ui.allocate_painter(
-                egui::vec2(render_w, render_h),
-                Sense::click_and_drag(),
-            );
+            let (resp, painter) =
+                ui.allocate_painter(egui::vec2(render_w, render_h), Sense::click_and_drag());
 
             let origin = resp.rect.min;
 
@@ -87,7 +85,8 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
             );
 
             painter.rect_stroke(
-                view_rect, 0.0,
+                view_rect,
+                0.0,
                 (1.5, Color32::from_rgb(255, 255, 80)),
                 egui::StrokeKind::Outside,
             );

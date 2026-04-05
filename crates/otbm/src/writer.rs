@@ -15,8 +15,10 @@ pub fn serialize_otbm(map: &MapData, path: &Path) -> Result<()> {
     let data = serialize_otbm_bytes(map)?;
     // Write to a temp file in the same directory, then rename for atomicity
     let temp_path = path.with_extension("otbm.tmp");
-    std::fs::write(&temp_path, &data).with_context(|| format!("writing temp file {}", temp_path.display()))?;
-    std::fs::rename(&temp_path, path).with_context(|| format!("renaming {} to {}", temp_path.display(), path.display()))?;
+    std::fs::write(&temp_path, &data)
+        .with_context(|| format!("writing temp file {}", temp_path.display()))?;
+    std::fs::rename(&temp_path, path)
+        .with_context(|| format!("renaming {} to {}", temp_path.display(), path.display()))?;
     Ok(())
 }
 
@@ -299,14 +301,21 @@ mod tests {
         let mut t3 = Tile::new(102, 200, 7);
         t3.ground = Some(4526);
         let mut tele = MapItem::new(1387);
-        tele.tele_dest = Some(TeleportDest { x: 500, y: 600, z: 7 });
+        tele.tele_dest = Some(TeleportDest {
+            x: 500,
+            y: 600,
+            z: 7,
+        });
         t3.items.push(tele);
         map.set_tile(t3);
 
         // Tile with flags (protection zone)
         let mut t4 = Tile::new(103, 200, 7);
         t4.ground = Some(4526);
-        t4.flags = TileFlags { protection_zone: true, ..Default::default() };
+        t4.flags = TileFlags {
+            protection_zone: true,
+            ..Default::default()
+        };
         map.set_tile(t4);
 
         // House tile
@@ -348,13 +357,21 @@ mod tests {
         map.towns.push(Town {
             id: 1,
             name: "Thais".to_string(),
-            position: Position { x: 100, y: 200, z: 7 },
+            position: Position {
+                x: 100,
+                y: 200,
+                z: 7,
+            },
         });
 
         // Waypoint
         map.waypoints.push(Waypoint {
             name: "temple".to_string(),
-            position: Position { x: 100, y: 200, z: 7 },
+            position: Position {
+                x: 100,
+                y: 200,
+                z: 7,
+            },
         });
 
         map
@@ -517,7 +534,9 @@ mod tests {
 
         let bytes = serialize_otbm_bytes(&map).unwrap();
         let parsed = parse_otbm_bytes(&bytes).unwrap();
-        let t = parsed.get_tile(10, 10, 7).expect("tile with special-byte ID");
+        let t = parsed
+            .get_tile(10, 10, 7)
+            .expect("tile with special-byte ID");
         assert_eq!(t.ground, Some(0xFEFD));
     }
 

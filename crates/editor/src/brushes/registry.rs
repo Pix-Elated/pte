@@ -113,7 +113,9 @@ impl BrushRegistry {
 
     /// Look up a brush by name.
     pub fn get_by_name(&self, name: &str) -> Option<&Arc<dyn Brush>> {
-        self.name_to_id.get(name).and_then(|id| self.brushes.get(id))
+        self.name_to_id
+            .get(name)
+            .and_then(|id| self.brushes.get(id))
     }
 
     /// Find which ground brush owns a given item ID.

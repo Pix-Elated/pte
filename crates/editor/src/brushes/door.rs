@@ -4,9 +4,9 @@
 //! that position with the appropriate door variant (horizontal/vertical,
 //! normal/locked/quest/magic).
 
-use pte_otbm::MapData;
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// Door variant types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,7 +73,11 @@ impl DoorBrush {
     }
 
     /// Find the best door for a given variant and orientation.
-    pub fn find_door(&self, variant: DoorVariant, orientation: DoorOrientation) -> Option<&DoorItem> {
+    pub fn find_door(
+        &self,
+        variant: DoorVariant,
+        orientation: DoorOrientation,
+    ) -> Option<&DoorItem> {
         self.doors
             .iter()
             .find(|d| d.variant == variant && d.orientation == orientation)
@@ -83,11 +87,21 @@ impl DoorBrush {
 }
 
 impl Brush for DoorBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.brush_name }
-    fn brush_type(&self) -> BrushType { BrushType::Door }
-    fn look_id(&self) -> u16 { self.look_id }
-    fn can_drag(&self) -> bool { false } // Doors are click-to-place
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.brush_name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Door
+    }
+    fn look_id(&self) -> u16 {
+        self.look_id
+    }
+    fn can_drag(&self) -> bool {
+        false
+    } // Doors are click-to-place
 
     fn draw(&self, map: &mut MapData, positions: &[(u16, u16, u8)]) -> BrushStroke {
         let mut tiles_before = Vec::new();
@@ -110,7 +124,10 @@ impl Brush for DoorBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }
@@ -141,7 +158,10 @@ impl Brush for DoorBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }

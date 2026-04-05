@@ -81,7 +81,9 @@ pub fn go_back(state: &mut EditorState) {
         z: state.camera.z_level,
     };
     // Push current if we haven't already
-    if state.nav_history.entries.is_empty() || state.nav_history.cursor == state.nav_history.entries.len() {
+    if state.nav_history.entries.is_empty()
+        || state.nav_history.cursor == state.nav_history.entries.len()
+    {
         state.nav_history.push(cur.x, cur.y, cur.z);
     }
 

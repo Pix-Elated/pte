@@ -52,8 +52,7 @@ pub fn decompress_cip(data: &[u8]) -> Result<Vec<u8>> {
     let mut output = Vec::new();
     let mut reader = std::io::Cursor::new(&lzma_alone);
 
-    lzma_rs::lzma_decompress(&mut reader, &mut output)
-        .context("LZMA1 decompression failed")?;
+    lzma_rs::lzma_decompress(&mut reader, &mut output).context("LZMA1 decompression failed")?;
 
     Ok(output)
 }
@@ -127,7 +126,10 @@ mod tests {
         let result = decompress_cip(&data);
         assert!(result.is_err());
         let err_msg = format!("{:#}", result.unwrap_err());
-        assert!(err_msg.contains("LZMA"), "Expected LZMA error, got: {err_msg}");
+        assert!(
+            err_msg.contains("LZMA"),
+            "Expected LZMA error, got: {err_msg}"
+        );
     }
 
     /// Test against a real CIP `.bmp.lzma` file from the client data.
@@ -152,7 +154,10 @@ mod tests {
 
         // Verify CIP header structure
         assert!(data.len() > CIP_HEADER_SIZE + 14, "File too small");
-        assert_eq!(data[32], 0x5D, "LZMA properties byte should be at offset 32");
+        assert_eq!(
+            data[32], 0x5D,
+            "LZMA properties byte should be at offset 32"
+        );
 
         // Decompress
         let decompressed = decompress_cip(&data).unwrap();

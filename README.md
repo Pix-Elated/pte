@@ -1,5 +1,9 @@
 # Pixelated's Tibia Editor (PTE)
 
+<p align="center">
+  <img src="assets/pte_logo.webp" alt="PTE Logo" width="400">
+</p>
+
 A modern, GPU-accelerated map and sprite editor for Open Tibia servers. Built in Rust with [egui](https://github.com/emilk/egui) for a fast, cross-platform native experience.
 
 > **Status:** Early alpha — actively developed, expect rough edges. Feedback and bug reports are very welcome!

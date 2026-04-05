@@ -4,9 +4,9 @@
 //! selects the correct wall piece (horizontal, vertical, corner, T-junction,
 //! intersection, etc.) based on neighboring wall tiles of the same brush.
 
-use pte_otbm::MapData;
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// The 17 wall alignment types (matching RME's WallNode::type).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,21 +38,21 @@ impl WallAlignment {
     pub fn from_cardinal_mask(mask: u8) -> Self {
         match mask & 0x0F {
             0b0000 => Self::Pole,
-            0b0001 => Self::SouthEnd,       // N only → this is the south end
-            0b0010 => Self::WestEnd,         // E only → this is the west end (wall goes east)
-            0b0011 => Self::NorthEastDiag,   // N+E
-            0b0100 => Self::NorthEnd,        // S only
-            0b0101 => Self::Vertical,        // N+S
-            0b0110 => Self::SouthEastDiag,   // S+E → actually NW corner style
-            0b0111 => Self::EastT,           // N+S+E
-            0b1000 => Self::EastEnd,         // W only → east end
-            0b1001 => Self::NorthWestDiag,   // N+W
-            0b1010 => Self::Horizontal,      // E+W
-            0b1011 => Self::NorthT,          // N+E+W
-            0b1100 => Self::SouthWestDiag,   // S+W
-            0b1101 => Self::WestT,           // N+S+W
-            0b1110 => Self::SouthT,          // S+E+W
-            0b1111 => Self::Intersection,    // All four
+            0b0001 => Self::SouthEnd,      // N only → this is the south end
+            0b0010 => Self::WestEnd,       // E only → this is the west end (wall goes east)
+            0b0011 => Self::NorthEastDiag, // N+E
+            0b0100 => Self::NorthEnd,      // S only
+            0b0101 => Self::Vertical,      // N+S
+            0b0110 => Self::SouthEastDiag, // S+E → actually NW corner style
+            0b0111 => Self::EastT,         // N+S+E
+            0b1000 => Self::EastEnd,       // W only → east end
+            0b1001 => Self::NorthWestDiag, // N+W
+            0b1010 => Self::Horizontal,    // E+W
+            0b1011 => Self::NorthT,        // N+E+W
+            0b1100 => Self::SouthWestDiag, // S+W
+            0b1101 => Self::WestT,         // N+S+W
+            0b1110 => Self::SouthT,        // S+E+W
+            0b1111 => Self::Intersection,  // All four
             _ => Self::Pole,
         }
     }
@@ -160,10 +160,14 @@ impl WallBrush {
         for &(dx, dy, bit) in &cardinals {
             let nx = x as i32 + dx;
             let ny = y as i32 + dy;
-            if nx >= 0 && ny >= 0 && nx <= u16::MAX as i32 && ny <= u16::MAX as i32
-                && is_same_wall(nx as u16, ny as u16, z) {
-                    mask |= bit;
-                }
+            if nx >= 0
+                && ny >= 0
+                && nx <= u16::MAX as i32
+                && ny <= u16::MAX as i32
+                && is_same_wall(nx as u16, ny as u16, z)
+            {
+                mask |= bit;
+            }
         }
         mask
     }
@@ -184,11 +188,21 @@ impl WallBrush {
 }
 
 impl Brush for WallBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.brush_name }
-    fn brush_type(&self) -> BrushType { BrushType::Wall }
-    fn look_id(&self) -> u16 { self.look_id }
-    fn needs_border_update(&self) -> bool { true }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.brush_name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Wall
+    }
+    fn look_id(&self) -> u16 {
+        self.look_id
+    }
+    fn needs_border_update(&self) -> bool {
+        true
+    }
 
     fn wall_item_for_mask(&self, mask: u8) -> Option<u16> {
         let alignment = WallAlignment::from_cardinal_mask(mask);
@@ -240,7 +254,10 @@ impl Brush for WallBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }
@@ -251,12 +268,8 @@ impl Brush for WallBrush {
         let mut dirty = Vec::new();
 
         // Collect all item IDs this brush uses
-        let all_ids: std::collections::HashSet<u16> = self
-            .wall_items
-            .iter()
-            .flatten()
-            .copied()
-            .collect();
+        let all_ids: std::collections::HashSet<u16> =
+            self.wall_items.iter().flatten().copied().collect();
 
         for &(x, y, z) in positions {
             let before = map.get_tile(x, y, z).cloned();
@@ -286,7 +299,10 @@ impl Brush for WallBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }

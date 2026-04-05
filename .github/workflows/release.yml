@@ -40,6 +40,11 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION (tag: $TAG)"
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -66,7 +71,8 @@ jobs:
 
       # ── Code-sign the main binary ──
       - name: Sign main executable
-        uses: Azure/trusted-signing-action@v0.5.0
+        continue-on-error: true
+        uses: Azure/artifact-signing-action@v1.1.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -90,7 +96,8 @@ jobs:
 
       # ── Code-sign the installer ──
       - name: Sign installer
-        uses: Azure/trusted-signing-action@v0.5.0
+        continue-on-error: true
+        uses: Azure/artifact-signing-action@v1.1.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}

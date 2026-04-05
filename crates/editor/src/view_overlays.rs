@@ -3,8 +3,8 @@
 //! All overlays are drawn in `render_overlays()` and called from the viewport.
 
 use crate::state::EditorState;
-use pte_appearances as appearances;
 use egui::{Color32, Pos2, Rect};
+use pte_appearances as appearances;
 
 /// Tibia client viewport size in tiles (visible area in the game client).
 const CLIENT_VIEW_W: f64 = 15.0;
@@ -16,7 +16,9 @@ pub fn draw_client_box(
     state: &EditorState,
     world_to_screen: &dyn Fn(f64, f64) -> Pos2,
 ) {
-    if !state.show_client_box { return; }
+    if !state.show_client_box {
+        return;
+    }
 
     let cx = state.camera.center_x;
     let cy = state.camera.center_y;
@@ -54,26 +56,18 @@ pub fn highlight_color_for_item(
     let appearance = apps.get(appearances::Category::Object, item_id)?;
     let flags = appearance.flags.as_ref()?;
 
-    if state.highlight_pickupable {
-        if flags.take.is_some() {
-            return Some(Color32::from_rgba_unmultiplied(50, 200, 50, 40));
-        }
+    if state.highlight_pickupable && flags.take.is_some() {
+        return Some(Color32::from_rgba_unmultiplied(50, 200, 50, 40));
     }
-    if state.highlight_moveable {
-        if flags.unmove.is_none() && flags.bank.is_none() {
-            // Item is moveable if not explicitly unpassable and not ground
-            return Some(Color32::from_rgba_unmultiplied(50, 50, 200, 40));
-        }
+    if state.highlight_moveable && flags.unmove.is_none() && flags.bank.is_none() {
+        // Item is moveable if not explicitly unpassable and not ground
+        return Some(Color32::from_rgba_unmultiplied(50, 50, 200, 40));
     }
-    if state.highlight_blocking {
-        if flags.unpass.is_some() {
-            return Some(Color32::from_rgba_unmultiplied(200, 50, 50, 40));
-        }
+    if state.highlight_blocking && flags.unpass.is_some() {
+        return Some(Color32::from_rgba_unmultiplied(200, 50, 50, 40));
     }
-    if state.highlight_hooks {
-        if flags.hook.is_some() {
-            return Some(Color32::from_rgba_unmultiplied(200, 200, 50, 50));
-        }
+    if state.highlight_hooks && flags.hook.is_some() {
+        return Some(Color32::from_rgba_unmultiplied(200, 200, 50, 50));
     }
 
     None
@@ -88,7 +82,9 @@ pub fn draw_light_overlays(
     appearances: &Option<appearances::LoadedAppearances>,
     state: &EditorState,
 ) {
-    if !state.show_light_overlay { return; }
+    if !state.show_light_overlay {
+        return;
+    }
 
     let apps = match appearances.as_ref() {
         Some(a) => a,
@@ -130,7 +126,9 @@ fn draw_light_for_item(
     let brightness = light.brightness.unwrap_or(0) as f32;
     let color = light.color.unwrap_or(0) as u16;
 
-    if brightness <= 0.0 { return; }
+    if brightness <= 0.0 {
+        return;
+    }
 
     // Tibia light color is an index into a light color table
     // Approximate: warm yellow for most, white for color 215
@@ -172,9 +170,13 @@ pub fn draw_shade(
     viewport_rect: Rect,
     world_to_screen: &dyn Fn(f64, f64) -> Pos2,
 ) {
-    if !state.show_shade { return; }
+    if !state.show_shade {
+        return;
+    }
 
-    let Some(ref sel) = state.selection else { return; };
+    let Some(ref sel) = state.selection else {
+        return;
+    };
 
     let sel_tl = world_to_screen(sel.x1 as f64, sel.y1 as f64);
     let sel_br = world_to_screen(sel.x2 as f64 + 1.0, sel.y2 as f64 + 1.0);
@@ -231,17 +233,22 @@ pub fn draw_shade(
 }
 
 /// Show tooltip for the hovered tile.
-pub fn draw_tooltip(
-    ctx: &egui::Context,
-    state: &EditorState,
-) {
-    if !state.show_tooltips { return; }
+pub fn draw_tooltip(ctx: &egui::Context, state: &EditorState) {
+    if !state.show_tooltips {
+        return;
+    }
 
-    let Some((hx, hy)) = state.hover_tile else { return; };
+    let Some((hx, hy)) = state.hover_tile else {
+        return;
+    };
     let z = state.camera.z_level;
 
-    let Some(ref map) = state.map_data else { return; };
-    let Some(tile) = map.get_tile(hx, hy, z) else { return; };
+    let Some(ref map) = state.map_data else {
+        return;
+    };
+    let Some(tile) = map.get_tile(hx, hy, z) else {
+        return;
+    };
 
     // Build tooltip text
     let mut lines = Vec::new();
@@ -268,25 +275,42 @@ pub fn draw_tooltip(
         lines.push(format!("House: #{}", hid));
     }
 
-    if tile.flags.protection_zone { lines.push("  [PZ]".into()); }
-    if tile.flags.no_pvp { lines.push("  [NoPvP]".into()); }
-    if tile.flags.pvp_zone { lines.push("  [PvP]".into()); }
-    if tile.flags.no_logout { lines.push("  [NoLog]".into()); }
+    if tile.flags.protection_zone {
+        lines.push("  [PZ]".into());
+    }
+    if tile.flags.no_pvp {
+        lines.push("  [NoPvP]".into());
+    }
+    if tile.flags.pvp_zone {
+        lines.push("  [PvP]".into());
+    }
+    if tile.flags.no_logout {
+        lines.push("  [NoLog]".into());
+    }
 
     let text = lines.join("\n");
 
-    egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tile_tooltip_layer")), egui::Id::new("tile_tooltip"), |ui| {
-        ui.label(
-            egui::RichText::new(text)
-                .size(10.0)
-                .color(Color32::from_rgb(220, 220, 220)),
-        );
-    });
+    egui::show_tooltip_at_pointer(
+        ctx,
+        egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tile_tooltip_layer")),
+        egui::Id::new("tile_tooltip"),
+        |ui| {
+            ui.label(
+                egui::RichText::new(text)
+                    .size(10.0)
+                    .color(Color32::from_rgb(220, 220, 220)),
+            );
+        },
+    );
 }
 
 fn item_name(item_id: u32, appearances: &Option<appearances::LoadedAppearances>) -> String {
-    let Some(ref apps) = appearances else { return String::new() };
-    let Some(appearance) = apps.get(appearances::Category::Object, item_id) else { return String::new() };
+    let Some(ref apps) = appearances else {
+        return String::new();
+    };
+    let Some(appearance) = apps.get(appearances::Category::Object, item_id) else {
+        return String::new();
+    };
     if let Some(ref name) = appearance.name {
         format!(" ({})", name)
     } else {
@@ -301,12 +325,16 @@ pub fn draw_spawn_overlays(
     world_to_screen: &dyn Fn(f64, f64) -> Pos2,
     tile_px: f32,
 ) {
-    if !state.show_spawns { return; }
+    if !state.show_spawns {
+        return;
+    }
 
     let z = state.camera.z_level;
 
     for spawn in &state.spawns {
-        if spawn.center_z != z { continue; }
+        if spawn.center_z != z {
+            continue;
+        }
 
         let cx = spawn.center_x as f64 + 0.5;
         let cy = spawn.center_y as f64 + 0.5;

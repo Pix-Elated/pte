@@ -44,7 +44,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
         .show(ctx, |ui| {
             // Filter
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Filter:").color(theme::TEXT_SECONDARY).size(10.0));
+                ui.label(
+                    egui::RichText::new("Filter:")
+                        .color(theme::TEXT_SECONDARY)
+                        .size(10.0),
+                );
                 ui.add(
                     egui::TextEdit::singleline(&mut state.creature_filter)
                         .desired_width(140.0)
@@ -64,9 +68,12 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                 let monsters = state.creature_list.iter().filter(|c| !c.is_npc).count();
                 let npcs = total - monsters;
                 ui.label(
-                    egui::RichText::new(format!("{} creatures ({} monsters, {} NPCs)", total, monsters, npcs))
-                        .size(10.0)
-                        .color(theme::TEXT_MUTED),
+                    egui::RichText::new(format!(
+                        "{} creatures ({} monsters, {} NPCs)",
+                        total, monsters, npcs
+                    ))
+                    .size(10.0)
+                    .color(theme::TEXT_MUTED),
                 );
             });
 

@@ -202,7 +202,10 @@ fn read_flags(r: &mut Cursor<&[u8]>) -> Result<DatFlags> {
             unknown => {
                 // Unknown attribute — we can't know its length, so we store
                 // the marker and stop reading flags (safest approach).
-                tracing::warn!("Unknown DAT attribute 0x{:02X}, stopping flag parse", unknown);
+                tracing::warn!(
+                    "Unknown DAT attribute 0x{:02X}, stopping flag parse",
+                    unknown
+                );
                 flags.raw_attrs.push((unknown, Vec::new()));
                 break;
             }
@@ -228,9 +231,12 @@ fn read_sprite_layout(r: &mut Cursor<&[u8]>) -> Result<SpriteLayout> {
     let pattern_z = r.read_u8()?;
     let frames = r.read_u8()?;
 
-    let total_sprites =
-        width as u32 * height as u32 * layers as u32
-        * pattern_x as u32 * pattern_y as u32 * pattern_z as u32
+    let total_sprites = width as u32
+        * height as u32
+        * layers as u32
+        * pattern_x as u32
+        * pattern_y as u32
+        * pattern_z as u32
         * frames as u32;
 
     let mut sprite_ids = Vec::with_capacity(total_sprites as usize);
@@ -295,13 +301,27 @@ fn write_flags(out: &mut Vec<u8>, flags: &DatFlags) -> Result<()> {
         out.write_u8(attr::GROUND)?;
         out.write_u16::<LittleEndian>(speed)?;
     }
-    if flags.is_ground_border { out.write_u8(attr::GROUND_BORDER)?; }
-    if flags.is_on_bottom { out.write_u8(attr::ON_BOTTOM)?; }
-    if flags.is_on_top { out.write_u8(attr::ON_TOP)?; }
-    if flags.is_container { out.write_u8(attr::CONTAINER)?; }
-    if flags.is_stackable { out.write_u8(attr::STACKABLE)?; }
-    if flags.is_force_use { out.write_u8(attr::FORCE_USE)?; }
-    if flags.is_multi_use { out.write_u8(attr::MULTI_USE)?; }
+    if flags.is_ground_border {
+        out.write_u8(attr::GROUND_BORDER)?;
+    }
+    if flags.is_on_bottom {
+        out.write_u8(attr::ON_BOTTOM)?;
+    }
+    if flags.is_on_top {
+        out.write_u8(attr::ON_TOP)?;
+    }
+    if flags.is_container {
+        out.write_u8(attr::CONTAINER)?;
+    }
+    if flags.is_stackable {
+        out.write_u8(attr::STACKABLE)?;
+    }
+    if flags.is_force_use {
+        out.write_u8(attr::FORCE_USE)?;
+    }
+    if flags.is_multi_use {
+        out.write_u8(attr::MULTI_USE)?;
+    }
     if let Some(len) = flags.is_writable {
         out.write_u8(attr::WRITABLE)?;
         out.write_u16::<LittleEndian>(len)?;
@@ -310,24 +330,50 @@ fn write_flags(out: &mut Vec<u8>, flags: &DatFlags) -> Result<()> {
         out.write_u8(attr::WRITABLE_ONCE)?;
         out.write_u16::<LittleEndian>(len)?;
     }
-    if flags.is_fluid_container { out.write_u8(attr::FLUID_CONTAINER)?; }
-    if flags.is_splash { out.write_u8(attr::SPLASH)?; }
-    if flags.is_not_walkable { out.write_u8(attr::NOT_WALKABLE)?; }
-    if flags.is_not_moveable { out.write_u8(attr::NOT_MOVEABLE)?; }
-    if flags.blocks_projectile { out.write_u8(attr::BLOCKS_PROJECTILE)?; }
-    if flags.is_not_pathable { out.write_u8(attr::NOT_PATHABLE)?; }
-    if flags.is_pickupable { out.write_u8(attr::PICKUPABLE)?; }
-    if flags.is_hangable { out.write_u8(attr::HANGABLE)?; }
-    if flags.hook_south { out.write_u8(attr::HOOK_SOUTH)?; }
-    if flags.hook_east { out.write_u8(attr::HOOK_EAST)?; }
-    if flags.is_rotatable { out.write_u8(attr::ROTATABLE)?; }
+    if flags.is_fluid_container {
+        out.write_u8(attr::FLUID_CONTAINER)?;
+    }
+    if flags.is_splash {
+        out.write_u8(attr::SPLASH)?;
+    }
+    if flags.is_not_walkable {
+        out.write_u8(attr::NOT_WALKABLE)?;
+    }
+    if flags.is_not_moveable {
+        out.write_u8(attr::NOT_MOVEABLE)?;
+    }
+    if flags.blocks_projectile {
+        out.write_u8(attr::BLOCKS_PROJECTILE)?;
+    }
+    if flags.is_not_pathable {
+        out.write_u8(attr::NOT_PATHABLE)?;
+    }
+    if flags.is_pickupable {
+        out.write_u8(attr::PICKUPABLE)?;
+    }
+    if flags.is_hangable {
+        out.write_u8(attr::HANGABLE)?;
+    }
+    if flags.hook_south {
+        out.write_u8(attr::HOOK_SOUTH)?;
+    }
+    if flags.hook_east {
+        out.write_u8(attr::HOOK_EAST)?;
+    }
+    if flags.is_rotatable {
+        out.write_u8(attr::ROTATABLE)?;
+    }
     if let Some((intensity, color)) = flags.has_light {
         out.write_u8(attr::LIGHT)?;
         out.write_u16::<LittleEndian>(intensity)?;
         out.write_u16::<LittleEndian>(color)?;
     }
-    if flags.dont_hide { out.write_u8(attr::DONT_HIDE)?; }
-    if flags.is_translucent { out.write_u8(attr::TRANSLUCENT)?; }
+    if flags.dont_hide {
+        out.write_u8(attr::DONT_HIDE)?;
+    }
+    if flags.is_translucent {
+        out.write_u8(attr::TRANSLUCENT)?;
+    }
     if let Some((x, y)) = flags.has_offset {
         out.write_u8(attr::OFFSET)?;
         out.write_u16::<LittleEndian>(x)?;
@@ -337,8 +383,12 @@ fn write_flags(out: &mut Vec<u8>, flags: &DatFlags) -> Result<()> {
         out.write_u8(attr::ELEVATION)?;
         out.write_u16::<LittleEndian>(elev)?;
     }
-    if flags.is_lying_object { out.write_u8(attr::LYING_OBJECT)?; }
-    if flags.animate_always { out.write_u8(attr::ANIMATE_ALWAYS)?; }
+    if flags.is_lying_object {
+        out.write_u8(attr::LYING_OBJECT)?;
+    }
+    if flags.animate_always {
+        out.write_u8(attr::ANIMATE_ALWAYS)?;
+    }
     if let Some(color) = flags.has_minimap_color {
         out.write_u8(attr::MINIMAP_COLOR)?;
         out.write_u16::<LittleEndian>(color)?;
@@ -347,8 +397,12 @@ fn write_flags(out: &mut Vec<u8>, flags: &DatFlags) -> Result<()> {
         out.write_u8(attr::LENS_HELP)?;
         out.write_u16::<LittleEndian>(help)?;
     }
-    if flags.is_full_ground { out.write_u8(attr::FULL_GROUND)?; }
-    if flags.ignore_look { out.write_u8(attr::IGNORE_LOOK)?; }
+    if flags.is_full_ground {
+        out.write_u8(attr::FULL_GROUND)?;
+    }
+    if flags.ignore_look {
+        out.write_u8(attr::IGNORE_LOOK)?;
+    }
     if let Some(slot) = flags.is_cloth {
         out.write_u8(attr::CLOTH)?;
         out.write_u16::<LittleEndian>(slot)?;
@@ -368,7 +422,9 @@ fn write_flags(out: &mut Vec<u8>, flags: &DatFlags) -> Result<()> {
         out.write_u8(attr::DEFAULT_ACTION)?;
         out.write_u16::<LittleEndian>(action)?;
     }
-    if flags.is_usable { out.write_u8(attr::USABLE)?; }
+    if flags.is_usable {
+        out.write_u8(attr::USABLE)?;
+    }
 
     out.write_u8(attr::END)?;
     Ok(())

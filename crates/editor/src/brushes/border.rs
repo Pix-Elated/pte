@@ -207,15 +207,15 @@ const fn build_border_types() -> [u32; 256] {
 
     // Helper constants for border type IDs
     const NONE: u8 = 0;
-    const N: u8 = 1;    // North horizontal
-    const E: u8 = 2;    // East horizontal
-    const S: u8 = 3;    // South horizontal
-    const W: u8 = 4;    // West horizontal
-    const CNW: u8 = 5;  // Corner NW
-    const CNE: u8 = 6;  // Corner NE
-    const CSW: u8 = 7;  // Corner SW
-    const CSE: u8 = 8;  // Corner SE
-    const DNW: u8 = 9;  // Diagonal NW
+    const N: u8 = 1; // North horizontal
+    const E: u8 = 2; // East horizontal
+    const S: u8 = 3; // South horizontal
+    const W: u8 = 4; // West horizontal
+    const CNW: u8 = 5; // Corner NW
+    const CNE: u8 = 6; // Corner NE
+    const CSW: u8 = 7; // Corner SW
+    const CSE: u8 = 8; // Corner SE
+    const DNW: u8 = 9; // Diagonal NW
     const DNE: u8 = 10; // Diagonal NE
     const DSW: u8 = 11; // Diagonal SW
     const DSE: u8 = 12; // Diagonal SE
@@ -231,24 +231,24 @@ const fn build_border_types() -> [u32; 256] {
     // 0x80 = SE  (bit 7)
 
     const BIT_NW: u32 = 0x01;
-    const BIT_N: u32  = 0x02;
+    const BIT_N: u32 = 0x02;
     const BIT_NE: u32 = 0x04;
-    const BIT_W: u32  = 0x08;
-    const BIT_E: u32  = 0x10;
+    const BIT_W: u32 = 0x08;
+    const BIT_E: u32 = 0x10;
     const BIT_SW: u32 = 0x20;
-    const BIT_S: u32  = 0x40;
+    const BIT_S: u32 = 0x40;
     const BIT_SE: u32 = 0x80;
 
     // Build the table by iterating all 256 combinations
     let mut i: u32 = 0;
     while i < 256 {
         let has_nw = (i & BIT_NW) != 0;
-        let has_n  = (i & BIT_N) != 0;
+        let has_n = (i & BIT_N) != 0;
         let has_ne = (i & BIT_NE) != 0;
-        let has_w  = (i & BIT_W) != 0;
-        let has_e  = (i & BIT_E) != 0;
+        let has_w = (i & BIT_W) != 0;
+        let has_e = (i & BIT_E) != 0;
         let has_sw = (i & BIT_SW) != 0;
-        let has_s  = (i & BIT_S) != 0;
+        let has_s = (i & BIT_S) != 0;
         let has_se = (i & BIT_SE) != 0;
 
         let mut b0: u8 = NONE;
@@ -285,72 +285,171 @@ const fn build_border_types() -> [u32; 256] {
 
         // Reset and use the canonical RME algorithm:
         // For each combination, determine which border pieces are needed.
-        b0 = NONE; b1 = NONE; b2 = NONE; b3 = NONE;
+        b0 = NONE;
+        b1 = NONE;
+        b2 = NONE;
+        b3 = NONE;
         slot = 0;
 
         // Full N+W = NW diagonal
         if has_n && has_w {
-            if slot == 0 { b0 = DNW; } else if slot == 1 { b1 = DNW; } else if slot == 2 { b2 = DNW; } else { b3 = DNW; }
+            if slot == 0 {
+                b0 = DNW;
+            } else if slot == 1 {
+                b1 = DNW;
+            } else if slot == 2 {
+                b2 = DNW;
+            } else {
+                b3 = DNW;
+            }
             slot += 1;
         } else {
             if has_n && !has_w {
-                if slot == 0 { b0 = N; } else if slot == 1 { b1 = N; } else if slot == 2 { b2 = N; } else { b3 = N; }
+                if slot == 0 {
+                    b0 = N;
+                } else if slot == 1 {
+                    b1 = N;
+                } else if slot == 2 {
+                    b2 = N;
+                } else {
+                    b3 = N;
+                }
                 slot += 1;
             }
             if has_w && !has_n {
-                if slot == 0 { b0 = W; } else if slot == 1 { b1 = W; } else if slot == 2 { b2 = W; } else { b3 = W; }
+                if slot == 0 {
+                    b0 = W;
+                } else if slot == 1 {
+                    b1 = W;
+                } else if slot == 2 {
+                    b2 = W;
+                } else {
+                    b3 = W;
+                }
                 slot += 1;
             }
             // NW corner only if both N and W are same, but NW itself is different
             if !has_n && !has_w && has_nw {
-                if slot == 0 { b0 = CNW; } else if slot == 1 { b1 = CNW; } else if slot == 2 { b2 = CNW; } else { b3 = CNW; }
+                if slot == 0 {
+                    b0 = CNW;
+                } else if slot == 1 {
+                    b1 = CNW;
+                } else if slot == 2 {
+                    b2 = CNW;
+                } else {
+                    b3 = CNW;
+                }
                 slot += 1;
             }
         }
 
         // Full N+E = NE diagonal
         if has_n && has_e {
-            if slot == 0 { b0 = DNE; } else if slot == 1 { b1 = DNE; } else if slot == 2 { b2 = DNE; } else { b3 = DNE; }
+            if slot == 0 {
+                b0 = DNE;
+            } else if slot == 1 {
+                b1 = DNE;
+            } else if slot == 2 {
+                b2 = DNE;
+            } else {
+                b3 = DNE;
+            }
             slot += 1;
         } else {
             // N already handled above, only add E if not combined with N
             if has_e && !has_n {
-                if slot == 0 { b0 = E; } else if slot == 1 { b1 = E; } else if slot == 2 { b2 = E; } else { b3 = E; }
+                if slot == 0 {
+                    b0 = E;
+                } else if slot == 1 {
+                    b1 = E;
+                } else if slot == 2 {
+                    b2 = E;
+                } else {
+                    b3 = E;
+                }
                 slot += 1;
             }
             // NE corner
             if !has_n && !has_e && has_ne {
-                if slot == 0 { b0 = CNE; } else if slot == 1 { b1 = CNE; } else if slot == 2 { b2 = CNE; } else { b3 = CNE; }
+                if slot == 0 {
+                    b0 = CNE;
+                } else if slot == 1 {
+                    b1 = CNE;
+                } else if slot == 2 {
+                    b2 = CNE;
+                } else {
+                    b3 = CNE;
+                }
                 slot += 1;
             }
         }
 
         // Full S+W = SW diagonal
         if has_s && has_w {
-            if slot == 0 { b0 = DSW; } else if slot == 1 { b1 = DSW; } else if slot == 2 { b2 = DSW; } else { b3 = DSW; }
+            if slot == 0 {
+                b0 = DSW;
+            } else if slot == 1 {
+                b1 = DSW;
+            } else if slot == 2 {
+                b2 = DSW;
+            } else {
+                b3 = DSW;
+            }
             slot += 1;
         } else {
             if has_s && !has_w {
-                if slot == 0 { b0 = S; } else if slot == 1 { b1 = S; } else if slot == 2 { b2 = S; } else { b3 = S; }
+                if slot == 0 {
+                    b0 = S;
+                } else if slot == 1 {
+                    b1 = S;
+                } else if slot == 2 {
+                    b2 = S;
+                } else {
+                    b3 = S;
+                }
                 slot += 1;
             }
             // W already handled above
             // SW corner
             if !has_s && !has_w && has_sw {
-                if slot == 0 { b0 = CSW; } else if slot == 1 { b1 = CSW; } else if slot == 2 { b2 = CSW; } else { b3 = CSW; }
+                if slot == 0 {
+                    b0 = CSW;
+                } else if slot == 1 {
+                    b1 = CSW;
+                } else if slot == 2 {
+                    b2 = CSW;
+                } else {
+                    b3 = CSW;
+                }
                 slot += 1;
             }
         }
 
         // Full S+E = SE diagonal
         if has_s && has_e {
-            if slot == 0 { b0 = DSE; } else if slot == 1 { b1 = DSE; } else if slot == 2 { b2 = DSE; } else { b3 = DSE; }
+            if slot == 0 {
+                b0 = DSE;
+            } else if slot == 1 {
+                b1 = DSE;
+            } else if slot == 2 {
+                b2 = DSE;
+            } else {
+                b3 = DSE;
+            }
             // slot += 1; // unused after last
         } else {
             // S and E already handled
             // SE corner
             if !has_s && !has_e && has_se {
-                if slot == 0 { b0 = CSE; } else if slot == 1 { b1 = CSE; } else if slot == 2 { b2 = CSE; } else { b3 = CSE; }
+                if slot == 0 {
+                    b0 = CSE;
+                } else if slot == 1 {
+                    b1 = CSE;
+                } else if slot == 2 {
+                    b2 = CSE;
+                } else {
+                    b3 = CSE;
+                }
                 // slot += 1;
             }
         }
@@ -367,7 +466,13 @@ const fn build_border_types() -> [u32; 256] {
 /// than the center tile.
 ///
 /// `get_brush_id(x, y, z) -> Option<BrushId>` returns the brush assigned to a tile.
-pub fn compute_neighbor_mask<F>(x: u16, y: u16, z: u8, center_brush: Option<u32>, get_brush_id: F) -> u8
+pub fn compute_neighbor_mask<F>(
+    x: u16,
+    y: u16,
+    z: u8,
+    center_brush: Option<u32>,
+    get_brush_id: F,
+) -> u8
 where
     F: Fn(u16, u16, u8) -> Option<u32>,
 {

@@ -59,12 +59,16 @@ impl Default for EditorConfig {
 
 /// Return the path to the config file (next to the executable).
 fn config_path() -> Option<PathBuf> {
-    std::env::current_exe().ok().map(|p| p.with_file_name("editor_config.json"))
+    std::env::current_exe()
+        .ok()
+        .map(|p| p.with_file_name("editor_config.json"))
 }
 
 /// Load config from disk. Returns defaults if file doesn't exist or is invalid.
 pub fn load() -> EditorConfig {
-    let Some(path) = config_path() else { return EditorConfig::default() };
+    let Some(path) = config_path() else {
+        return EditorConfig::default();
+    };
     match std::fs::read_to_string(&path) {
         Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
         Err(_) => EditorConfig::default(),

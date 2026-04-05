@@ -53,7 +53,9 @@ fn do_import(state: &mut EditorState) {
         .add_filter("OTBM Map", &["otbm"])
         .set_title("Select map to import");
 
-    let Some(path) = dialog.pick_file() else { return };
+    let Some(path) = dialog.pick_file() else {
+        return;
+    };
     let import_map = match pte_otbm::parse_otbm(&path) {
         Ok(m) => m,
         Err(e) => {
@@ -62,7 +64,9 @@ fn do_import(state: &mut EditorState) {
         }
     };
 
-    let Some(ref mut map) = state.map_data else { return };
+    let Some(ref mut map) = state.map_data else {
+        return;
+    };
 
     let ox = state.import_offset_x;
     let oy = state.import_offset_y;
@@ -129,13 +133,11 @@ fn do_import(state: &mut EditorState) {
     }
 
     // Merge spawns from the imported map's spawn.xml (if it exists alongside)
-    let spawn_path = path.with_file_name(
-        if import_map.spawn_file.is_empty() {
-            "spawn.xml".to_string()
-        } else {
-            import_map.spawn_file.clone()
-        }
-    );
+    let spawn_path = path.with_file_name(if import_map.spawn_file.is_empty() {
+        "spawn.xml".to_string()
+    } else {
+        import_map.spawn_file.clone()
+    });
     let mut spawns_added = 0usize;
     if spawn_path.exists() {
         if let Ok(import_spawns) = crate::spawn_xml::read_spawns(&spawn_path) {
@@ -150,7 +152,11 @@ fn do_import(state: &mut EditorState) {
 
     tracing::info!(
         "Imported {} tiles, {} towns, {} waypoints, {} spawns from {}",
-        count, towns_added, wps_added, spawns_added, path.display()
+        count,
+        towns_added,
+        wps_added,
+        spawns_added,
+        path.display()
     );
     state.show_import_dialog = false;
 }

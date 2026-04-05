@@ -17,7 +17,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
         .default_size([300.0, 400.0])
         .show(ctx, |ui| {
             let Some((tx, ty)) = state.hover_tile else {
-                ui.label(egui::RichText::new("Hover a tile to view its stack").color(theme::TEXT_MUTED));
+                ui.label(
+                    egui::RichText::new("Hover a tile to view its stack").color(theme::TEXT_MUTED),
+                );
                 return;
             };
             let z = state.camera.z_level;
@@ -59,7 +61,11 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
             ui.add_space(4.0);
 
             if tile.items.is_empty() {
-                ui.label(egui::RichText::new("No items").size(10.0).color(theme::TEXT_MUTED));
+                ui.label(
+                    egui::RichText::new("No items")
+                        .size(10.0)
+                        .color(theme::TEXT_MUTED),
+                );
             } else {
                 let mut swap: Option<(usize, usize)> = None;
 
@@ -99,21 +105,25 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                                             ui.with_layout(
                                                 egui::Layout::right_to_left(egui::Align::Center),
                                                 |ui| {
-                                                    if i + 1 < item_count {
-                                                        if ui.small_button("▼")
-                                                            .on_hover_text("Move down (higher in stack)")
+                                                    if i + 1 < item_count
+                                                        && ui
+                                                            .small_button("▼")
+                                                            .on_hover_text(
+                                                                "Move down (higher in stack)",
+                                                            )
                                                             .clicked()
-                                                        {
-                                                            swap = Some((i, i + 1));
-                                                        }
+                                                    {
+                                                        swap = Some((i, i + 1));
                                                     }
-                                                    if i > 0 {
-                                                        if ui.small_button("▲")
-                                                            .on_hover_text("Move up (lower in stack)")
+                                                    if i > 0
+                                                        && ui
+                                                            .small_button("▲")
+                                                            .on_hover_text(
+                                                                "Move up (lower in stack)",
+                                                            )
                                                             .clicked()
-                                                        {
-                                                            swap = Some((i, i - 1));
-                                                        }
+                                                    {
+                                                        swap = Some((i, i - 1));
                                                     }
                                                 },
                                             );
