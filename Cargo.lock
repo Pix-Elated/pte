@@ -2785,7 +2785,7 @@ dependencies = [
 
 [[package]]
 name = "pte"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "pte-appearances"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "prost",
@@ -2826,7 +2826,7 @@ dependencies = [
 
 [[package]]
 name = "pte-assets"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "image",
@@ -2840,7 +2840,7 @@ dependencies = [
 
 [[package]]
 name = "pte-otbm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "thiserror 2.0.18",
@@ -3666,7 +3666,7 @@ dependencies = [
 
 [[package]]
 name = "tibia-spr-dat"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "byteorder",

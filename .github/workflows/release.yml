@@ -90,6 +90,9 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
+          # ISS references ../target/release/pte.exe — copy signed binary there
+          New-Item -ItemType Directory -Force -Path target/release | Out-Null
+          Copy-Item dist/pte.exe target/release/pte.exe
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             /DMyAppVersion=${{ steps.meta.outputs.version }} `
             installer\pte-setup.iss

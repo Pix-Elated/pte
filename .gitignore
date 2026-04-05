@@ -19,3 +19,5 @@ Thumbs.db
 __pycache__/
 *.pyc
 clippy_out.txt
+release_log.txt
+clippy_out.txt

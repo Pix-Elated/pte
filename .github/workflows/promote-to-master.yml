@@ -19,7 +19,7 @@ jobs:
         with:
           ref: staging
           fetch-depth: 0
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if promotion needed
         id: check
@@ -38,7 +38,7 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         id: bump_type
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER=$(gh pr list --state merged --base staging --limit 1 --json number -q '.[0].number')
 
@@ -125,7 +125,7 @@ jobs:
       - name: Create PR to master with auto-merge
         if: steps.check.outputs.skip != 'true' && steps.version.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           BRANCH="${{ steps.version.outputs.branch }}"
