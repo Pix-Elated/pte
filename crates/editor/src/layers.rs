@@ -29,7 +29,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         if let Some(&first) = visible.first() {
-            if compact_btn(ui, &format!("Top ({})", z_level_label_short(first, z_surface))) {
+            if compact_btn(
+                ui,
+                &format!("Top ({})", z_level_label_short(first, z_surface)),
+            ) {
                 state.camera.z_level = first;
             }
         }
@@ -38,7 +41,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
         }
         if let Some(&last) = visible.last() {
             if last != z_surface {
-                if compact_btn(ui, &format!("Bot ({})", z_level_label_short(last, z_surface))) {
+                if compact_btn(
+                    ui,
+                    &format!("Bot ({})", z_level_label_short(last, z_surface)),
+                ) {
                     state.camera.z_level = last;
                 }
             }
@@ -54,12 +60,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
             let new_z = current_z.saturating_sub(1);
             state.camera.z_level = new_z;
             // Ensure z_min/z_max encompass the new floor
-            if new_z < state.z_min { state.z_min = new_z; }
+            if new_z < state.z_min {
+                state.z_min = new_z;
+            }
         }
         if compact_btn(ui, "+ Below") {
             let new_z = (current_z + 1).min(MAP_MAX_Z);
             state.camera.z_level = new_z;
-            if new_z > state.z_max { state.z_max = new_z; }
+            if new_z > state.z_max {
+                state.z_max = new_z;
+            }
         }
     });
 
@@ -101,12 +111,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     theme::TEXT_MUTED
                 };
 
-                let tile_count = state.map_data.as_ref().map(|m| {
-                    m.chunks.iter()
-                        .filter(|(k, _)| k.z == z)
-                        .map(|(_, c)| c.len())
-                        .sum::<usize>()
-                }).unwrap_or(0);
+                let tile_count = state
+                    .map_data
+                    .as_ref()
+                    .map(|m| {
+                        m.chunks
+                            .iter()
+                            .filter(|(k, _)| k.z == z)
+                            .map(|(_, c)| c.len())
+                            .sum::<usize>()
+                    })
+                    .unwrap_or(0);
 
                 let display = if tile_count > 0 {
                     format!("{}  ({})", label, tile_count)
@@ -115,14 +130,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 };
 
                 ui.horizontal(|ui| {
-                    let response = ui.add(
-                        egui::SelectableLabel::new(
-                            selected,
-                            egui::RichText::new(&display)
-                                .size(11.0)
-                                .color(text_color),
-                        ),
-                    );
+                    let response = ui.add(egui::SelectableLabel::new(
+                        selected,
+                        egui::RichText::new(&display).size(11.0).color(text_color),
+                    ));
                     if response.clicked() {
                         state.camera.z_level = z;
                     }
@@ -132,10 +143,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 }
 
 fn compact_btn(ui: &mut egui::Ui, text: &str) -> bool {
-    ui.add(
-        egui::Button::new(egui::RichText::new(text).size(10.0))
-            .min_size(egui::vec2(0.0, 20.0))
-    ).clicked()
+    ui.add(egui::Button::new(egui::RichText::new(text).size(10.0)).min_size(egui::vec2(0.0, 20.0)))
+        .clicked()
 }
 
 /// Short label for quick-jump buttons.

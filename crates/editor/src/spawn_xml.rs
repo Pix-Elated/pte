@@ -10,9 +10,9 @@
 //! </spawns>
 //! ```
 
-use std::path::Path;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::reader::Reader;
+use std::path::Path;
 
 /// A single creature within a spawn area.
 #[derive(Debug, Clone)]
@@ -61,7 +61,9 @@ pub fn read_spawns(path: &Path) -> anyhow::Result<Vec<Spawn>> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
-                let tag = reader.decoder().decode(e.name().as_ref())
+                let tag = reader
+                    .decoder()
+                    .decode(e.name().as_ref())
                     .unwrap_or_default()
                     .to_string();
 
@@ -92,7 +94,9 @@ pub fn read_spawns(path: &Path) -> anyhow::Result<Vec<Spawn>> {
                 }
             }
             Ok(Event::End(ref e)) => {
-                let tag = reader.decoder().decode(e.name().as_ref())
+                let tag = reader
+                    .decoder()
+                    .decode(e.name().as_ref())
                     .unwrap_or_default()
                     .to_string();
                 if tag == "spawn" {
@@ -124,7 +128,11 @@ pub fn write_spawns(spawns: &[Spawn], path: &Path) -> anyhow::Result<()> {
         )?;
         for c in &spawn.creatures {
             let tag = if c.is_npc { "npc" } else { "monster" };
-            let safe_name = c.name.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
+            let safe_name = c
+                .name
+                .replace('&', "&amp;")
+                .replace('"', "&quot;")
+                .replace('<', "&lt;");
             write!(
                 xml,
                 "\t\t<{} name=\"{}\" x=\"{}\" y=\"{}\" z=\"{}\" spawntime=\"{}\" />\n",
@@ -138,5 +146,3 @@ pub fn write_spawns(spawns: &[Spawn], path: &Path) -> anyhow::Result<()> {
     std::fs::write(path, &xml)?;
     Ok(())
 }
-
-

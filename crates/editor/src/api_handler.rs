@@ -9,10 +9,7 @@ use crate::api_server::{ApiCommand, ApiRequest, ApiResponse};
 use crate::state::EditorState;
 
 /// Process all pending API commands (non-blocking).
-pub fn process_commands(
-    state: &mut EditorState,
-    cmd_rx: &std::sync::mpsc::Receiver<ApiCommand>,
-) {
+pub fn process_commands(state: &mut EditorState, cmd_rx: &std::sync::mpsc::Receiver<ApiCommand>) {
     // Drain all pending commands (non-blocking)
     while let Ok(cmd) = cmd_rx.try_recv() {
         let response = handle_request(state, &cmd.request);
@@ -250,7 +247,13 @@ fn handle_fill_area(state: &mut EditorState, params: &Value) -> ApiResponse {
                 count += 1;
             }
         }
-        (count, crate::state::UndoAction { tiles_before, tiles_after })
+        (
+            count,
+            crate::state::UndoAction {
+                tiles_before,
+                tiles_after,
+            },
+        )
     };
 
     if !undo.tiles_before.is_empty() {
@@ -329,7 +332,13 @@ fn handle_replace_item(state: &mut EditorState, params: &Value) -> ApiResponse {
                 }
             }
         }
-        (count, crate::state::UndoAction { tiles_before, tiles_after })
+        (
+            count,
+            crate::state::UndoAction {
+                tiles_before,
+                tiles_after,
+            },
+        )
     };
 
     if !undo.tiles_before.is_empty() {
@@ -523,7 +532,11 @@ mod tests {
         map.towns.push(pte_otbm::Town {
             id: 1,
             name: "TestTown".to_string(),
-            position: pte_otbm::Position { x: 100, y: 200, z: 7 },
+            position: pte_otbm::Position {
+                x: 100,
+                y: 200,
+                z: 7,
+            },
         });
 
         state.map_data = Some(map);
@@ -558,7 +571,10 @@ mod tests {
     #[test]
     fn get_tile_returns_tile_data() {
         let mut state = make_state_with_map();
-        let resp = handle_request(&mut state, &req("get_tile", json!({"x": 100, "y": 200, "z": 7})));
+        let resp = handle_request(
+            &mut state,
+            &req("get_tile", json!({"x": 100, "y": 200, "z": 7})),
+        );
         assert!(resp.ok);
         let data = resp.data.unwrap();
         assert_eq!(data["ground"], 4526);
@@ -569,7 +585,10 @@ mod tests {
     #[test]
     fn get_tile_returns_null_for_empty() {
         let mut state = make_state_with_map();
-        let resp = handle_request(&mut state, &req("get_tile", json!({"x": 999, "y": 999, "z": 7})));
+        let resp = handle_request(
+            &mut state,
+            &req("get_tile", json!({"x": 999, "y": 999, "z": 7})),
+        );
         assert!(resp.ok);
         assert!(resp.data.unwrap().is_null());
     }
@@ -586,7 +605,10 @@ mod tests {
         let mut state = make_state_with_map();
         let resp = handle_request(
             &mut state,
-            &req("set_tile", json!({"x": 50, "y": 50, "z": 7, "ground_id": 100})),
+            &req(
+                "set_tile",
+                json!({"x": 50, "y": 50, "z": 7, "ground_id": 100}),
+            ),
         );
         assert!(resp.ok);
 
@@ -600,15 +622,23 @@ mod tests {
         let mut state = make_state_with_map();
         let resp = handle_request(
             &mut state,
-            &req("set_tile", json!({
-                "x": 60, "y": 60, "z": 7,
-                "ground_id": 100,
-                "items": [{"id": 2160, "action_id": 99}]
-            })),
+            &req(
+                "set_tile",
+                json!({
+                    "x": 60, "y": 60, "z": 7,
+                    "ground_id": 100,
+                    "items": [{"id": 2160, "action_id": 99}]
+                }),
+            ),
         );
         assert!(resp.ok);
 
-        let tile = state.map_data.as_ref().unwrap().get_tile(60, 60, 7).unwrap();
+        let tile = state
+            .map_data
+            .as_ref()
+            .unwrap()
+            .get_tile(60, 60, 7)
+            .unwrap();
         assert_eq!(tile.items.len(), 1);
         assert_eq!(tile.items[0].action_id, Some(99));
     }
@@ -616,14 +646,24 @@ mod tests {
     #[test]
     fn remove_tile_works() {
         let mut state = make_state_with_map();
-        assert!(state.map_data.as_ref().unwrap().get_tile(100, 200, 7).is_some());
+        assert!(state
+            .map_data
+            .as_ref()
+            .unwrap()
+            .get_tile(100, 200, 7)
+            .is_some());
 
         let resp = handle_request(
             &mut state,
             &req("remove_tile", json!({"x": 100, "y": 200, "z": 7})),
         );
         assert!(resp.ok);
-        assert!(state.map_data.as_ref().unwrap().get_tile(100, 200, 7).is_none());
+        assert!(state
+            .map_data
+            .as_ref()
+            .unwrap()
+            .get_tile(100, 200, 7)
+            .is_none());
     }
 
     #[test]
@@ -631,11 +671,19 @@ mod tests {
         let mut state = make_state_with_map();
         let resp = handle_request(
             &mut state,
-            &req("add_item", json!({"x": 100, "y": 200, "z": 7, "item_id": 3000})),
+            &req(
+                "add_item",
+                json!({"x": 100, "y": 200, "z": 7, "item_id": 3000}),
+            ),
         );
         assert!(resp.ok);
 
-        let tile = state.map_data.as_ref().unwrap().get_tile(100, 200, 7).unwrap();
+        let tile = state
+            .map_data
+            .as_ref()
+            .unwrap()
+            .get_tile(100, 200, 7)
+            .unwrap();
         assert_eq!(tile.items.len(), 2);
         assert_eq!(tile.items[1].id, 3000);
     }
@@ -645,7 +693,10 @@ mod tests {
         let mut state = make_state_with_map();
         let resp = handle_request(
             &mut state,
-            &req("fill_area", json!({"x1": 0, "y1": 0, "x2": 2, "y2": 2, "z": 7, "item_id": 100})),
+            &req(
+                "fill_area",
+                json!({"x1": 0, "y1": 0, "x2": 2, "y2": 2, "z": 7, "item_id": 100}),
+            ),
         );
         assert!(resp.ok);
         assert_eq!(resp.data.unwrap()["count"], 9);
@@ -663,7 +714,10 @@ mod tests {
         let mut state = make_state_with_map();
         let resp = handle_request(
             &mut state,
-            &req("fill_area", json!({"x1": 0, "y1": 0, "x2": 200, "y2": 200, "z": 7, "item_id": 100})),
+            &req(
+                "fill_area",
+                json!({"x1": 0, "y1": 0, "x2": 200, "y2": 200, "z": 7, "item_id": 100}),
+            ),
         );
         assert!(!resp.ok);
         assert!(resp.error.unwrap().contains("too large"));
@@ -679,7 +733,12 @@ mod tests {
         assert!(resp.ok);
         assert_eq!(resp.data.unwrap()["count"], 1);
 
-        let tile = state.map_data.as_ref().unwrap().get_tile(100, 200, 7).unwrap();
+        let tile = state
+            .map_data
+            .as_ref()
+            .unwrap()
+            .get_tile(100, 200, 7)
+            .unwrap();
         assert_eq!(tile.ground, Some(9999));
     }
 
@@ -735,7 +794,10 @@ mod tests {
         let mut state = make_state_with_map();
         let resp = handle_request(
             &mut state,
-            &req("get_tiles_in_area", json!({"x1": 99, "y1": 199, "x2": 101, "y2": 201, "z": 7})),
+            &req(
+                "get_tiles_in_area",
+                json!({"x1": 99, "y1": 199, "x2": 101, "y2": 201, "z": 7}),
+            ),
         );
         assert!(resp.ok);
         let data = resp.data.unwrap();

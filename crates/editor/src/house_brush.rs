@@ -3,8 +3,17 @@
 use crate::state::{EditorState, UndoAction};
 
 /// Paint a house_id onto a tile (or clear it if `erase` is true).
-pub fn apply_house_brush(state: &mut EditorState, x: u16, y: u16, z: u8, house_id: u32, erase: bool) {
-    let Some(ref mut map) = state.map_data else { return };
+pub fn apply_house_brush(
+    state: &mut EditorState,
+    x: u16,
+    y: u16,
+    z: u8,
+    house_id: u32,
+    erase: bool,
+) {
+    let Some(ref mut map) = state.map_data else {
+        return;
+    };
 
     let tile_before = map.get_tile(x, y, z).cloned();
 
@@ -27,7 +36,9 @@ pub fn apply_house_brush(state: &mut EditorState, x: u16, y: u16, z: u8, house_i
 /// Set a tile as the house exit position.
 #[allow(dead_code)]
 pub fn set_house_exit(state: &mut EditorState, house_id: u32, x: u16, y: u16, z: u8) {
-    let Some(ref mut map) = state.map_data else { return };
+    let Some(ref mut map) = state.map_data else {
+        return;
+    };
     if let Some(house) = map.houses.iter_mut().find(|h| h.id == house_id) {
         house.exit = pte_otbm::Position { x, y, z };
     }
@@ -38,12 +49,7 @@ pub fn house_color(house_id: u32) -> egui::Color32 {
     // Golden ratio hash for even hue distribution
     let hue = ((house_id as f32 * 0.618_034) % 1.0) * 360.0;
     let (r, g, b) = hsv_to_rgb(hue, 0.6, 0.9);
-    egui::Color32::from_rgba_premultiplied(
-        (r * 60.0) as u8,
-        (g * 60.0) as u8,
-        (b * 60.0) as u8,
-        60,
-    )
+    egui::Color32::from_rgba_premultiplied((r * 60.0) as u8, (g * 60.0) as u8, (b * 60.0) as u8, 60)
 }
 
 /// Border color for house overlay (more saturated).

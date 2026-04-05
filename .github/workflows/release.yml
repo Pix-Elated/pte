@@ -66,7 +66,8 @@ jobs:
 
       # ── Code-sign the main binary ──
       - name: Sign main executable
-        uses: Azure/trusted-signing-action@v0.5.0
+        continue-on-error: true
+        uses: Azure/artifact-signing-action@v1.1.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -90,7 +91,8 @@ jobs:
 
       # ── Code-sign the installer ──
       - name: Sign installer
-        uses: Azure/trusted-signing-action@v0.5.0
+        continue-on-error: true
+        uses: Azure/artifact-signing-action@v1.1.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}

@@ -24,20 +24,35 @@ pub fn show_export_dialog(ctx: &egui::Context, state: &mut EditorState) {
             };
 
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Z-level:").size(11.0).color(theme::TEXT_SECONDARY));
+                ui.label(
+                    egui::RichText::new("Z-level:")
+                        .size(11.0)
+                        .color(theme::TEXT_SECONDARY),
+                );
                 let mut z = state.minimap_export_z as i32;
-                if ui.add(egui::DragValue::new(&mut z).range(0..=41).speed(0.1)).changed() {
+                if ui
+                    .add(egui::DragValue::new(&mut z).range(0..=41).speed(0.1))
+                    .changed()
+                {
                     state.minimap_export_z = z.clamp(0, 41) as u8;
                 }
             });
 
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Scale:").size(11.0).color(theme::TEXT_SECONDARY));
+                ui.label(
+                    egui::RichText::new("Scale:")
+                        .size(11.0)
+                        .color(theme::TEXT_SECONDARY),
+                );
                 egui::ComboBox::from_id_salt("minimap_scale")
                     .selected_text(format!("{}x", state.minimap_export_scale))
                     .show_ui(ui, |ui| {
                         for s in [1, 2, 4, 8] {
-                            ui.selectable_value(&mut state.minimap_export_scale, s, format!("{}x", s));
+                            ui.selectable_value(
+                                &mut state.minimap_export_scale,
+                                s,
+                                format!("{}x", s),
+                            );
                         }
                     });
             });
@@ -74,8 +89,17 @@ pub fn show_export_dialog(ctx: &egui::Context, state: &mut EditorState) {
                     .set_file_name("minimap.png")
                     .save_file()
                 {
-                    match export_minimap_png(map, &state.appearances, state.minimap_export_z, state.minimap_export_scale, &path) {
-                        Ok(_) => state.minimap_export_result = Some(format!("Saved to {}", path.display())),
+                    match export_minimap_png(
+                        map,
+                        &state.appearances,
+                        state.minimap_export_z,
+                        state.minimap_export_scale,
+                        &path,
+                    ) {
+                        Ok(_) => {
+                            state.minimap_export_result =
+                                Some(format!("Saved to {}", path.display()))
+                        }
                         Err(e) => state.minimap_export_result = Some(format!("Error: {}", e)),
                     }
                 }
@@ -83,7 +107,11 @@ pub fn show_export_dialog(ctx: &egui::Context, state: &mut EditorState) {
 
             if let Some(ref result) = state.minimap_export_result {
                 ui.add_space(4.0);
-                let color = if result.starts_with("Error") { theme::ERROR } else { theme::SUCCESS };
+                let color = if result.starts_with("Error") {
+                    theme::ERROR
+                } else {
+                    theme::SUCCESS
+                };
                 ui.label(egui::RichText::new(result).size(10.0).color(color));
             }
         });
@@ -143,7 +171,6 @@ fn minimap_color(
     tile: &pte_otbm::Tile,
     appearances: &Option<appearances::LoadedAppearances>,
 ) -> [u8; 3] {
-
     if let Some(ground_id) = tile.ground {
         if let Some(ref apps) = appearances {
             if let Some(appearance) = apps.get(Category::Object, ground_id as u32) {

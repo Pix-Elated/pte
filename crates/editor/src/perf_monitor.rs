@@ -107,12 +107,9 @@ pub fn show_overlay(ctx: &egui::Context, state: &EditorState) {
 
                     // Zoom
                     ui.label(
-                        egui::RichText::new(format!(
-                            "Zoom: {:.1}%",
-                            state.camera.zoom * 100.0
-                        ))
-                        .size(9.5)
-                        .color(theme::TEXT_MUTED),
+                        egui::RichText::new(format!("Zoom: {:.1}%", state.camera.zoom * 100.0))
+                            .size(9.5)
+                            .color(theme::TEXT_MUTED),
                     );
                 });
         });

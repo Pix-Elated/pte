@@ -1,6 +1,6 @@
-use pte_otbm::MapData;
-use crate::brushes::BrushId;
 use crate::brushes::registry::BrushRegistry;
+use crate::brushes::BrushId;
+use pte_otbm::MapData;
 
 /// Pick result from the eyedropper.
 pub struct PickResult {
@@ -12,7 +12,13 @@ pub struct PickResult {
 
 /// Pick the item under the cursor and resolve its brush.
 /// Returns the ground ID or top item ID, plus the owning brush if found.
-pub fn pick_item(map: &MapData, x: u16, y: u16, z: u8, registry: &BrushRegistry) -> Option<PickResult> {
+pub fn pick_item(
+    map: &MapData,
+    x: u16,
+    y: u16,
+    z: u8,
+    registry: &BrushRegistry,
+) -> Option<PickResult> {
     let tile = map.get_tile(x, y, z)?;
 
     let item_id = if let Some(last_item) = tile.items.last() {

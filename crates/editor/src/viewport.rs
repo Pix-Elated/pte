@@ -58,11 +58,18 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
     //   LOD 1: tile_px < 4    → minimap mode (colored dots per tile, no sprites)
     //   LOD 2: tile_px < 8    → ground-only (ground sprite, skip items/grid)
     //   LOD 3: tile_px >= 8   → full detail
-    let lod = if tile_px < 0.5 { 0 } else if tile_px < 4.0 { 1 } else if tile_px < 8.0 { 2 } else { 3 };
+    let lod = if tile_px < 0.5 {
+        0
+    } else if tile_px < 4.0 {
+        1
+    } else if tile_px < 8.0 {
+        2
+    } else {
+        3
+    };
 
     // Allocate canvas
-    let (response, painter) =
-        ui.allocate_painter(avail, egui::Sense::click_and_drag());
+    let (response, painter) = ui.allocate_painter(avail, egui::Sense::click_and_drag());
     let canvas_rect = response.rect;
 
     // Dark background
@@ -72,10 +79,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
     let world_to_screen = |wx: f64, wy: f64| -> Pos2 {
         let sx = ((wx - cam_center_x) * tile_px as f64) + (avail.x as f64 / 2.0);
         let sy = ((wy - cam_center_y) * tile_px as f64) + (avail.y as f64 / 2.0);
-        Pos2::new(
-            canvas_rect.min.x + sx as f32,
-            canvas_rect.min.y + sy as f32,
-        )
+        Pos2::new(canvas_rect.min.x + sx as f32, canvas_rect.min.y + sy as f32)
     };
 
     let screen_to_world = |sx: f32, sy: f32| -> (f64, f64) {
@@ -136,19 +140,31 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
                 if let Some(ground_id) = tile.ground {
                     draw_item_sprite_alpha(
-                        &painter, tile_rect, ground_id as u32,
-                        &state.appearances, &mut state.sprite_textures,
-                        &state.sprite_sheets, &ctx,
-                        state.animate_sprites, anim_time_ms, *alpha,
+                        &painter,
+                        tile_rect,
+                        ground_id as u32,
+                        &state.appearances,
+                        &mut state.sprite_textures,
+                        &state.sprite_sheets,
+                        &ctx,
+                        state.animate_sprites,
+                        anim_time_ms,
+                        *alpha,
                     );
                 }
                 if lod >= 3 {
                     for item in &tile.items {
                         draw_item_sprite_alpha(
-                            &painter, tile_rect, item.id as u32,
-                            &state.appearances, &mut state.sprite_textures,
-                            &state.sprite_sheets, &ctx,
-                            state.animate_sprites, anim_time_ms, *alpha,
+                            &painter,
+                            tile_rect,
+                            item.id as u32,
+                            &state.appearances,
+                            &mut state.sprite_textures,
+                            &state.sprite_sheets,
+                            &ctx,
+                            state.animate_sprites,
+                            anim_time_ms,
+                            *alpha,
                         );
                     }
                 }
@@ -169,7 +185,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
             for cy in cy1..=cy2 {
                 let key = pte_otbm::ChunkKey { cx, cy, z: cam_z };
                 if let Some(chunk) = map.chunks.get(&key) {
-                    if chunk.is_empty() { continue; }
+                    if chunk.is_empty() {
+                        continue;
+                    }
                     let wx = cx as f64 * chunk_size;
                     let wy = cy as f64 * chunk_size;
                     let tl = world_to_screen(wx, wy);
@@ -202,7 +220,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
         for tile in &tiles {
             // Apply stride sampling at extreme zoom-out to stay responsive
-            if stride > 1 && (!(tile.x as usize).is_multiple_of(stride) || !(tile.y as usize).is_multiple_of(stride)) {
+            if stride > 1
+                && (!(tile.x as usize).is_multiple_of(stride)
+                    || !(tile.y as usize).is_multiple_of(stride))
+            {
                 continue;
             }
 
@@ -225,10 +246,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 if state.show_ground {
                     if let Some(ground_id) = tile.ground {
                         draw_item_sprite(
-                            &painter, tile_rect, ground_id as u32,
-                            &state.appearances, &mut state.sprite_textures,
-                            &state.sprite_sheets, &ctx,
-                            state.animate_sprites, anim_time_ms,
+                            &painter,
+                            tile_rect,
+                            ground_id as u32,
+                            &state.appearances,
+                            &mut state.sprite_textures,
+                            &state.sprite_sheets,
+                            &ctx,
+                            state.animate_sprites,
+                            anim_time_ms,
                         );
                     }
                 }
@@ -236,19 +262,29 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 if lod >= 3 && state.show_items {
                     // Full detail — render all items sorted by z-order flags
                     // Order: clip → bottom → normal → top → topeffect
-                    let mut sorted_items: Vec<(u8, usize)> = tile.items.iter().enumerate().map(|(idx, item)| {
-                        let order = item_render_order(item.id as u32, &state.appearances);
-                        (order, idx)
-                    }).collect();
+                    let mut sorted_items: Vec<(u8, usize)> = tile
+                        .items
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, item)| {
+                            let order = item_render_order(item.id as u32, &state.appearances);
+                            (order, idx)
+                        })
+                        .collect();
                     sorted_items.sort_by_key(|&(order, idx)| (order, idx));
 
                     for &(_order, idx) in &sorted_items {
                         let item = &tile.items[idx];
                         draw_item_sprite(
-                            &painter, tile_rect, item.id as u32,
-                            &state.appearances, &mut state.sprite_textures,
-                            &state.sprite_sheets, &ctx,
-                            state.animate_sprites, anim_time_ms,
+                            &painter,
+                            tile_rect,
+                            item.id as u32,
+                            &state.appearances,
+                            &mut state.sprite_textures,
+                            &state.sprite_sheets,
+                            &ctx,
+                            state.animate_sprites,
+                            anim_time_ms,
                         );
                     }
 
@@ -258,7 +294,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                             if let Some(count) = item.count {
                                 if count > 1 {
                                     let text = format!("{}", count);
-                                    let pos = Pos2::new(tile_rect.max.x - 2.0, tile_rect.max.y - 1.0);
+                                    let pos =
+                                        Pos2::new(tile_rect.max.x - 2.0, tile_rect.max.y - 1.0);
                                     // Shadow
                                     painter.text(
                                         Pos2::new(pos.x + 1.0, pos.y + 1.0),
@@ -304,7 +341,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                         if tile_px > 12.0 {
                             let border = crate::house_brush::house_border_color(hid);
                             painter.rect_stroke(
-                                tile_rect, 0.0,
+                                tile_rect,
+                                0.0,
                                 (0.5, border),
                                 egui::StrokeKind::Inside,
                             );
@@ -313,10 +351,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 }
 
                 // Item type highlights (pickupable/moveable/blocking/hooks)
-                if lod >= 3 && (state.highlight_pickupable || state.highlight_moveable || state.highlight_blocking || state.highlight_hooks) {
+                if lod >= 3
+                    && (state.highlight_pickupable
+                        || state.highlight_moveable
+                        || state.highlight_blocking
+                        || state.highlight_hooks)
+                {
                     for item in &tile.items {
                         if let Some(color) = crate::view_overlays::highlight_color_for_item(
-                            item.id as u32, &state.appearances, state,
+                            item.id as u32,
+                            &state.appearances,
+                            state,
                         ) {
                             painter.rect_filled(tile_rect, 0.0, color);
                         }
@@ -326,8 +371,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 // Light source visualization
                 if lod >= 2 {
                     crate::view_overlays::draw_light_overlays(
-                        &painter, tile, tile_rect, tile_px,
-                        &state.appearances, state,
+                        &painter,
+                        tile,
+                        tile_rect,
+                        tile_px,
+                        &state.appearances,
+                        state,
                     );
                 }
             }
@@ -364,20 +413,22 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
         let is_painting_tool = matches!(
             state.active_tool,
-            ToolType::Brush | ToolType::Eraser | ToolType::Door
-                | ToolType::Creature | ToolType::Spawn | ToolType::Waypoint
+            ToolType::Brush
+                | ToolType::Eraser
+                | ToolType::Door
+                | ToolType::Creature
+                | ToolType::Spawn
+                | ToolType::Waypoint
         );
 
         if is_painting_tool && lod >= 2 {
             // Show brush footprint preview
-            let (brush_size, brush_shape) = if matches!(
-                state.active_tool,
-                ToolType::Brush | ToolType::Eraser
-            ) {
-                (state.brush_size, state.brush_shape)
-            } else {
-                (1, BrushShape::Square) // placement tools = single tile
-            };
+            let (brush_size, brush_shape) =
+                if matches!(state.active_tool, ToolType::Brush | ToolType::Eraser) {
+                    (state.brush_size, state.brush_shape)
+                } else {
+                    (1, BrushShape::Square) // placement tools = single tile
+                };
 
             let offsets = crate::brushes::shape::brush_offsets(brush_shape, brush_size);
             let is_eraser = state.active_tool == ToolType::Eraser;
@@ -386,7 +437,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
             for &(dx, dy) in &offsets {
                 let tx = hx as i32 + dx;
                 let ty = hy as i32 + dy;
-                if tx < 0 || ty < 0 { continue; }
+                if tx < 0 || ty < 0 {
+                    continue;
+                }
                 let tx = tx as u16;
                 let ty = ty as u16;
 
@@ -397,11 +450,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 if is_eraser {
                     // Eraser: red-tinted overlay + cross pattern
                     painter.rect_filled(
-                        tile_rect, 0.0,
+                        tile_rect,
+                        0.0,
                         Color32::from_rgba_unmultiplied(220, 50, 50, 45),
                     );
                     painter.rect_stroke(
-                        tile_rect, 0.0,
+                        tile_rect,
+                        0.0,
                         (1.0, Color32::from_rgba_unmultiplied(220, 70, 70, 140)),
                         egui::StrokeKind::Outside,
                     );
@@ -419,11 +474,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     // Draw a ghost of what will be placed
                     let preview_drawn = if tile_px >= 8.0 {
                         draw_brush_ghost(
-                            &painter, tile_rect,
-                            &state.appearances, &mut state.sprite_textures,
-                            &state.sprite_sheets, &ctx,
-                            state.active_brush, state.selected_item_id,
-                            &state.brush_registry, state.animate_sprites,
+                            &painter,
+                            tile_rect,
+                            &state.appearances,
+                            &mut state.sprite_textures,
+                            &state.sprite_sheets,
+                            &ctx,
+                            state.active_brush,
+                            state.selected_item_id,
+                            &state.brush_registry,
+                            state.animate_sprites,
                             anim_time_ms,
                         )
                     } else {
@@ -433,13 +493,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     if !preview_drawn {
                         // Fallback: green-tinted highlight
                         painter.rect_filled(
-                            tile_rect, 0.0,
+                            tile_rect,
+                            0.0,
                             Color32::from_rgba_unmultiplied(80, 200, 120, 35),
                         );
                     }
 
                     painter.rect_stroke(
-                        tile_rect, 0.0,
+                        tile_rect,
+                        0.0,
                         (1.0, Color32::from_rgba_unmultiplied(80, 220, 130, 120)),
                         egui::StrokeKind::Outside,
                     );
@@ -484,8 +546,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
         let tl = world_to_screen(sel.x1 as f64, sel.y1 as f64);
         let br = world_to_screen(sel.x2 as f64 + 1.0, sel.y2 as f64 + 1.0);
         let sel_rect = Rect::from_min_max(tl, br);
-        painter.rect_filled(sel_rect, 0.0, Color32::from_rgba_unmultiplied(233, 69, 96, 20));
-        painter.rect_stroke(sel_rect, 0.0, (1.5, Color32::from_rgb(233, 69, 96)), egui::StrokeKind::Outside);
+        painter.rect_filled(
+            sel_rect,
+            0.0,
+            Color32::from_rgba_unmultiplied(233, 69, 96, 20),
+        );
+        painter.rect_stroke(
+            sel_rect,
+            0.0,
+            (1.5, Color32::from_rgb(233, 69, 96)),
+            egui::StrokeKind::Outside,
+        );
     }
 
     // Shade non-selected areas
@@ -504,7 +575,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 for (dx, dy, src_tile) in &clip.tiles {
                     let tx = hx as i32 + *dx as i32;
                     let ty = hy as i32 + *dy as i32;
-                    if tx < 0 || ty < 0 { continue; }
+                    if tx < 0 || ty < 0 {
+                        continue;
+                    }
 
                     let tl = world_to_screen(tx as f64, ty as f64);
                     let br = world_to_screen(tx as f64 + 1.0, ty as f64 + 1.0);
@@ -514,28 +587,42 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     if tile_px >= 8.0 {
                         if let Some(gid) = src_tile.ground {
                             draw_item_sprite_alpha(
-                                &painter, tile_rect, gid as u32,
-                                &state.appearances, &mut state.sprite_textures,
-                                &state.sprite_sheets, &ctx,
-                                state.animate_sprites, anim_time_ms, 120,
+                                &painter,
+                                tile_rect,
+                                gid as u32,
+                                &state.appearances,
+                                &mut state.sprite_textures,
+                                &state.sprite_sheets,
+                                &ctx,
+                                state.animate_sprites,
+                                anim_time_ms,
+                                120,
                             );
                         }
                         for item in &src_tile.items {
                             draw_item_sprite_alpha(
-                                &painter, tile_rect, item.id as u32,
-                                &state.appearances, &mut state.sprite_textures,
-                                &state.sprite_sheets, &ctx,
-                                state.animate_sprites, anim_time_ms, 120,
+                                &painter,
+                                tile_rect,
+                                item.id as u32,
+                                &state.appearances,
+                                &mut state.sprite_textures,
+                                &state.sprite_sheets,
+                                &ctx,
+                                state.animate_sprites,
+                                anim_time_ms,
+                                120,
                             );
                         }
                     }
 
                     painter.rect_filled(
-                        tile_rect, 0.0,
+                        tile_rect,
+                        0.0,
                         Color32::from_rgba_unmultiplied(100, 180, 255, 25),
                     );
                     painter.rect_stroke(
-                        tile_rect, 0.0,
+                        tile_rect,
+                        0.0,
                         (1.0, Color32::from_rgba_unmultiplied(100, 180, 255, 100)),
                         egui::StrokeKind::Outside,
                     );
@@ -638,12 +725,17 @@ fn handle_viewport_input(
                     // Zone flag brush takes priority
                     if let Some(zone_flag) = state.active_zone_flag {
                         if !state.stroke_touched(tx, ty, z) {
-                            let offsets = crate::brushes::shape::brush_offsets(state.brush_shape, state.brush_size);
+                            let offsets = crate::brushes::shape::brush_offsets(
+                                state.brush_shape,
+                                state.brush_size,
+                            );
                             for &(dx, dy) in &offsets {
                                 let fx = tx as i32 + dx;
                                 let fy = ty as i32 + dy;
                                 if fx >= 0 && fy >= 0 {
-                                    crate::zone_brush::apply_zone(state, fx as u16, fy as u16, z, zone_flag, shift);
+                                    crate::zone_brush::apply_zone(
+                                        state, fx as u16, fy as u16, z, zone_flag, shift,
+                                    );
                                 }
                             }
                         }
@@ -651,38 +743,48 @@ fn handle_viewport_input(
                     // House brush: paint house_id onto tiles
                     else if let Some(house_id) = state.active_house_id {
                         if !state.stroke_touched(tx, ty, z) {
-                            let offsets = crate::brushes::shape::brush_offsets(state.brush_shape, state.brush_size);
+                            let offsets = crate::brushes::shape::brush_offsets(
+                                state.brush_shape,
+                                state.brush_size,
+                            );
                             for &(dx, dy) in &offsets {
                                 let fx = tx as i32 + dx;
                                 let fy = ty as i32 + dy;
                                 if fx >= 0 && fy >= 0 {
-                                    crate::house_brush::apply_house_brush(state, fx as u16, fy as u16, z, house_id, shift);
+                                    crate::house_brush::apply_house_brush(
+                                        state, fx as u16, fy as u16, z, house_id, shift,
+                                    );
                                 }
                             }
                         }
                     }
                     // Regular brush
                     else if (state.active_brush.is_some() || state.selected_item_id.is_some())
-                        && !state.stroke_touched(tx, ty, z) {
-                            if let Some(ref mut map) = state.map_data {
-                                let result = crate::tools::brush::apply_brush(
+                        && !state.stroke_touched(tx, ty, z)
+                    {
+                        if let Some(ref mut map) = state.map_data {
+                            let result = crate::tools::brush::apply_brush(
+                                map,
+                                tx,
+                                ty,
+                                z,
+                                state.active_brush,
+                                state.selected_item_id,
+                                &state.brush_registry,
+                                state.brush_size,
+                                state.brush_shape,
+                                &state.appearances,
+                            );
+                            if !result.dirty_positions.is_empty() {
+                                crate::brushes::process_borders(
                                     map,
-                                    tx,
-                                    ty,
-                                    z,
-                                    state.active_brush,
-                                    state.selected_item_id,
                                     &state.brush_registry,
-                                    state.brush_size,
-                                    state.brush_shape,
-                                    &state.appearances,
+                                    &result.dirty_positions,
                                 );
-                                if !result.dirty_positions.is_empty() {
-                                    crate::brushes::process_borders(map, &state.brush_registry, &result.dirty_positions);
-                                }
-                                state.stroke_add(result.undo);
                             }
+                            state.stroke_add(result.undo);
                         }
+                    }
                 }
                 ToolType::Eraser => {
                     match state.eraser_mode {
@@ -690,9 +792,14 @@ fn handle_viewport_input(
                             if !state.stroke_touched(tx, ty, z) {
                                 if let Some(ref mut map) = state.map_data {
                                     let action = crate::tools::eraser::apply_eraser(
-                                        map, tx, ty, z,
-                                        state.brush_size, state.brush_shape,
-                                        shift, state.eraser_flags_only,
+                                        map,
+                                        tx,
+                                        ty,
+                                        z,
+                                        state.brush_size,
+                                        state.brush_shape,
+                                        shift,
+                                        state.eraser_flags_only,
                                     );
                                     state.stroke_add(action);
                                 }
@@ -725,8 +832,12 @@ fn handle_viewport_input(
                             if !state.stroke_touched(tx, ty, z) {
                                 if let Some(ref mut map) = state.map_data {
                                     let action = crate::tools::eraser::apply_eraser(
-                                        map, tx, ty, z,
-                                        state.brush_size, state.brush_shape,
+                                        map,
+                                        tx,
+                                        ty,
+                                        z,
+                                        state.brush_size,
+                                        state.brush_shape,
                                         true, // clear_all = true
                                         false,
                                     );
@@ -747,7 +858,13 @@ fn handle_viewport_input(
                 }
                 ToolType::Eyedropper => {
                     if let Some(ref map) = state.map_data {
-                        if let Some(result) = crate::tools::eyedropper::pick_item(map, tx, ty, z, &state.brush_registry) {
+                        if let Some(result) = crate::tools::eyedropper::pick_item(
+                            map,
+                            tx,
+                            ty,
+                            z,
+                            &state.brush_registry,
+                        ) {
                             state.selected_item_id = Some(result.item_id);
                             if let Some(bid) = result.brush_id {
                                 state.active_brush = Some(bid);
@@ -766,10 +883,8 @@ fn handle_viewport_input(
                             }
                             // Track offset from drag origin
                             if let Some((ox, oy)) = state.selection_drag_origin {
-                                state.selection_drag_offset = Some((
-                                    tx as i32 - ox as i32,
-                                    ty as i32 - oy as i32,
-                                ));
+                                state.selection_drag_offset =
+                                    Some((tx as i32 - ox as i32, ty as i32 - oy as i32));
                             }
                         } else {
                             // Clicked outside selection — start a new one
@@ -791,8 +906,11 @@ fn handle_viewport_input(
                     if let Some(brush_id) = state.active_brush {
                         if !state.stroke_touched(tx, ty, z) {
                             // Check brush type for post-draw spawn handling
-                            let brush_type = state.brush_registry.get(brush_id).map(|b| b.brush_type());
-                            let creature_name = state.brush_registry.get(brush_id)
+                            let brush_type =
+                                state.brush_registry.get(brush_id).map(|b| b.brush_type());
+                            let creature_name = state
+                                .brush_registry
+                                .get(brush_id)
                                 .filter(|b| b.brush_type() == crate::brushes::BrushType::Creature)
                                 .map(|b| b.name().to_string());
 
@@ -810,7 +928,11 @@ fn handle_viewport_input(
                                     &state.appearances,
                                 );
                                 if !result.dirty_positions.is_empty() {
-                                    crate::brushes::process_borders(map, &state.brush_registry, &result.dirty_positions);
+                                    crate::brushes::process_borders(
+                                        map,
+                                        &state.brush_registry,
+                                        &result.dirty_positions,
+                                    );
                                 }
                                 state.stroke_add(result.undo);
                             }
@@ -959,7 +1081,8 @@ fn draw_brush_ghost(
     let tint = Color32::from_rgba_unmultiplied(255, 255, 255, 100);
 
     let item_id: Option<u32> = if let Some(brush_id) = active_brush {
-        brush_registry.get(brush_id)
+        brush_registry
+            .get(brush_id)
             .and_then(|b| b.preview_item_id())
             .map(|id| id as u32)
     } else {
@@ -970,7 +1093,9 @@ fn draw_brush_ghost(
 
     if let Some(ref apps) = appearances {
         if let Some(appearance) = apps.get(appearances::Category::Object, item_id) {
-            if let Some(sid) = resolve_appearance_sprite(appearance, 0, animate_sprites, anim_time_ms) {
+            if let Some(sid) =
+                resolve_appearance_sprite(appearance, 0, animate_sprites, anim_time_ms)
+            {
                 if let Some(tex) = get_or_upload(textures, sheets, ctx, sid) {
                     // Handle oversized sprites (64×64 etc.) — extend UP and LEFT
                     let [tex_w, tex_h] = tex.size();
@@ -981,10 +1106,7 @@ fn draw_brush_ghost(
 
                     let draw_rect = if tiles_w > 1.0 || tiles_h > 1.0 {
                         Rect::from_min_max(
-                            Pos2::new(
-                                rect.max.x - tile_w * tiles_w,
-                                rect.max.y - tile_h * tiles_h,
-                            ),
+                            Pos2::new(rect.max.x - tile_w * tiles_w, rect.max.y - tile_h * tiles_h),
                             rect.max,
                         )
                     } else {
@@ -1007,10 +1129,7 @@ fn draw_brush_ghost(
 
         let draw_rect = if tiles_w > 1.0 || tiles_h > 1.0 {
             Rect::from_min_max(
-                Pos2::new(
-                    rect.max.x - tile_w * tiles_w,
-                    rect.max.y - tile_h * tiles_h,
-                ),
+                Pos2::new(rect.max.x - tile_w * tiles_w, rect.max.y - tile_h * tiles_h),
                 rect.max,
             )
         } else {
@@ -1047,17 +1166,28 @@ fn hsl_to_color32(h: f32, s: f32, l: f32) -> Color32 {
 /// Get a minimap-style color for a tile (used at very low zoom LOD).
 /// Return the render order bucket for an item based on appearance flags.
 /// 0 = clip (always below), 1 = bottom (borders), 2 = normal, 3 = top, 4 = topeffect.
-fn item_render_order(
-    item_id: u32,
-    appearances: &Option<appearances::LoadedAppearances>,
-) -> u8 {
-    let Some(ref apps) = appearances else { return 2 };
-    let Some(appearance) = apps.get(Category::Object, item_id) else { return 2 };
-    let Some(ref flags) = appearance.flags else { return 2 };
-    if flags.clip.is_some() { return 0; }
-    if flags.bottom.is_some() { return 1; }
-    if flags.top.is_some() { return 3; }
-    if flags.topeffect.is_some() { return 4; }
+fn item_render_order(item_id: u32, appearances: &Option<appearances::LoadedAppearances>) -> u8 {
+    let Some(ref apps) = appearances else {
+        return 2;
+    };
+    let Some(appearance) = apps.get(Category::Object, item_id) else {
+        return 2;
+    };
+    let Some(ref flags) = appearance.flags else {
+        return 2;
+    };
+    if flags.clip.is_some() {
+        return 0;
+    }
+    if flags.bottom.is_some() {
+        return 1;
+    }
+    if flags.top.is_some() {
+        return 3;
+    }
+    if flags.topeffect.is_some() {
+        return 4;
+    }
     2
 }
 
@@ -1136,12 +1266,15 @@ pub(crate) fn resolve_appearance_sprite(
         return None;
     }
 
-    let num_phases = si.animation.as_ref()
+    let num_phases = si
+        .animation
+        .as_ref()
         .map(|a| a.sprite_phase.len().max(1))
         .unwrap_or(1);
 
     let frame = if animate && num_phases > 1 {
-        si.animation.as_ref()
+        si.animation
+            .as_ref()
             .map(|a| compute_anim_frame(a, anim_time_ms))
             .unwrap_or(0)
     } else {
@@ -1182,10 +1315,7 @@ fn draw_item_sprite(
 
                     let draw_rect = if tiles_w > 1.0 || tiles_h > 1.0 {
                         Rect::from_min_max(
-                            Pos2::new(
-                                rect.max.x - tile_w * tiles_w,
-                                rect.max.y - tile_h * tiles_h,
-                            ),
+                            Pos2::new(rect.max.x - tile_w * tiles_w, rect.max.y - tile_h * tiles_h),
                             rect.max,
                         )
                     } else {
@@ -1239,10 +1369,7 @@ fn draw_item_sprite_alpha(
 
                     let draw_rect = if tiles_w > 1.0 || tiles_h > 1.0 {
                         Rect::from_min_max(
-                            Pos2::new(
-                                rect.max.x - tile_w * tiles_w,
-                                rect.max.y - tile_h * tiles_h,
-                            ),
+                            Pos2::new(rect.max.x - tile_w * tiles_w, rect.max.y - tile_h * tiles_h),
                             rect.max,
                         )
                     } else {
@@ -1275,7 +1402,8 @@ pub(crate) fn get_or_upload(
         if sprite_id >= sheet.first_sprite_id && sprite_id <= sheet.last_sprite_id {
             if let Some(pixels) = sheet.get_sprite(sprite_id) {
                 let (w, h) = sheet.sprite_dimensions();
-                let tex = crate::sprite_picker::upload_sprite_texture(ctx, sprite_id, &pixels, w, h);
+                let tex =
+                    crate::sprite_picker::upload_sprite_texture(ctx, sprite_id, &pixels, w, h);
                 textures.insert(sprite_id, tex.clone());
                 return Some(tex);
             }

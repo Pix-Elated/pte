@@ -32,10 +32,18 @@ pub struct ApiResponse {
 
 impl ApiResponse {
     pub fn success(data: serde_json::Value) -> Self {
-        Self { ok: true, data: Some(data), error: None }
+        Self {
+            ok: true,
+            data: Some(data),
+            error: None,
+        }
     }
     pub fn error(msg: impl Into<String>) -> Self {
-        Self { ok: false, data: None, error: Some(msg.into()) }
+        Self {
+            ok: false,
+            data: None,
+            error: Some(msg.into()),
+        }
     }
 }
 
@@ -106,12 +114,8 @@ fn run_server(port: u16, cmd_tx: mpsc::Sender<ApiCommand>) {
             let resp = tiny_http::Response::from_string(
                 serde_json::to_string(&ApiResponse::error("Use POST")).unwrap(),
             )
-            .with_header(
-                tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap(),
-            )
-            .with_header(
-                tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
-            )
+            .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap())
+            .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
             .with_status_code(405);
             let _ = request.respond(resp);
             continue;
@@ -124,18 +128,12 @@ fn run_server(port: u16, cmd_tx: mpsc::Sender<ApiCommand>) {
                     tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
                 )
                 .with_header(
-                    tiny_http::Header::from_bytes(
-                        "Access-Control-Allow-Methods",
-                        "POST, OPTIONS",
-                    )
-                    .unwrap(),
+                    tiny_http::Header::from_bytes("Access-Control-Allow-Methods", "POST, OPTIONS")
+                        .unwrap(),
                 )
                 .with_header(
-                    tiny_http::Header::from_bytes(
-                        "Access-Control-Allow-Headers",
-                        "Content-Type",
-                    )
-                    .unwrap(),
+                    tiny_http::Header::from_bytes("Access-Control-Allow-Headers", "Content-Type")
+                        .unwrap(),
                 );
             let _ = request.respond(resp);
             continue;
@@ -147,9 +145,7 @@ fn run_server(port: u16, cmd_tx: mpsc::Sender<ApiCommand>) {
             let resp = tiny_http::Response::from_string(
                 serde_json::to_string(&ApiResponse::error("Request too large")).unwrap(),
             )
-            .with_header(
-                tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap(),
-            )
+            .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap())
             .with_status_code(413);
             let _ = request.respond(resp);
             continue;
@@ -160,9 +156,7 @@ fn run_server(port: u16, cmd_tx: mpsc::Sender<ApiCommand>) {
             let resp = tiny_http::Response::from_string(
                 serde_json::to_string(&ApiResponse::error(format!("Read error: {e}"))).unwrap(),
             )
-            .with_header(
-                tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap(),
-            )
+            .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap())
             .with_status_code(400);
             let _ = request.respond(resp);
             continue;
@@ -202,14 +196,11 @@ fn run_server(port: u16, cmd_tx: mpsc::Sender<ApiCommand>) {
             .recv_timeout(std::time::Duration::from_secs(10))
             .unwrap_or_else(|| ApiResponse::error("Timeout waiting for editor response"));
 
-        let json = serde_json::to_string(&api_resp).unwrap_or_else(|_| {
-            r#"{"ok":false,"error":"Serialization error"}"#.to_string()
-        });
+        let json = serde_json::to_string(&api_resp)
+            .unwrap_or_else(|_| r#"{"ok":false,"error":"Serialization error"}"#.to_string());
 
         let resp = tiny_http::Response::from_string(json)
-            .with_header(
-                tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap(),
-            )
+            .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap())
             .with_header(
                 tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
             );

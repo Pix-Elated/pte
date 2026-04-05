@@ -47,14 +47,21 @@ pub fn show(ui: &mut egui::Ui, state: &EditorState) {
             ui.label(
                 egui::RichText::new(format!("undo:{} redo:{}", undos, redos))
                     .size(10.5)
-                    .color(if undos > 0 { theme::WARNING } else { theme::TEXT_MUTED }),
+                    .color(if undos > 0 {
+                        theme::WARNING
+                    } else {
+                        theme::TEXT_MUTED
+                    }),
             );
         }
 
         // Hover coordinates (right-aligned)
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some((hx, hy)) = state.hover_tile {
-                ui.label(text_style(&format!("{}, {}, {}", hx, hy, state.camera.z_level)));
+                ui.label(text_style(&format!(
+                    "{}, {}, {}",
+                    hx, hy, state.camera.z_level
+                )));
             }
         });
     });

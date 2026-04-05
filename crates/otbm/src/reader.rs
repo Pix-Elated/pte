@@ -451,7 +451,10 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../../canary/data-otservbr-global/world/xtrails.otbm");
         if !path.exists() {
-            eprintln!("Skipping real OTBM test — file not found at {}", path.display());
+            eprintln!(
+                "Skipping real OTBM test — file not found at {}",
+                path.display()
+            );
             return;
         }
 
@@ -473,8 +476,15 @@ mod tests {
                 max_y = max_y.max(tile.y);
             }
         }
-        eprintln!("Tile bounds: X={}..{}, Y={}..{}", min_x, max_x, min_y, max_y);
-        eprintln!("Center: ({}, {})", (min_x as u32 + max_x as u32) / 2, (min_y as u32 + max_y as u32) / 2);
+        eprintln!(
+            "Tile bounds: X={}..{}, Y={}..{}",
+            min_x, max_x, min_y, max_y
+        );
+        eprintln!(
+            "Center: ({}, {})",
+            (min_x as u32 + max_x as u32) / 2,
+            (min_y as u32 + max_y as u32) / 2
+        );
 
         eprintln!(
             "Parsed OTBM: {}x{}, {} tiles, {} towns, {} waypoints",

@@ -65,11 +65,21 @@ impl TileFlags {
 
     pub fn to_u32(self) -> u32 {
         let mut v = 0u32;
-        if self.protection_zone { v |= 1; }
-        if self.no_pvp { v |= 4; }
-        if self.no_logout { v |= 8; }
-        if self.pvp_zone { v |= 16; }
-        if self.refresh { v |= 32; }
+        if self.protection_zone {
+            v |= 1;
+        }
+        if self.no_pvp {
+            v |= 4;
+        }
+        if self.no_logout {
+            v |= 8;
+        }
+        if self.pvp_zone {
+            v |= 16;
+        }
+        if self.refresh {
+            v |= 32;
+        }
         v
     }
 
@@ -278,7 +288,10 @@ impl MapData {
             cy: tile.y as i32 / CHUNK_SIZE,
             z: tile.z,
         };
-        let local = ((tile.x as i32 % CHUNK_SIZE) as u8, (tile.y as i32 % CHUNK_SIZE) as u8);
+        let local = (
+            (tile.x as i32 % CHUNK_SIZE) as u8,
+            (tile.y as i32 % CHUNK_SIZE) as u8,
+        );
         self.chunks.entry(key).or_default().insert(local, tile);
     }
 
@@ -339,10 +352,18 @@ impl MapData {
         let mut min = u8::MAX;
         let mut max = 0u8;
         for key in self.chunks.keys() {
-            if key.z < min { min = key.z; }
-            if key.z > max { max = key.z; }
+            if key.z < min {
+                min = key.z;
+            }
+            if key.z > max {
+                max = key.z;
+            }
         }
-        if min <= max { Some((min, max)) } else { None }
+        if min <= max {
+            Some((min, max))
+        } else {
+            None
+        }
     }
 
     /// Returns (min_x, min_y, max_x, max_y) tile extents for a given z-level.
@@ -353,7 +374,9 @@ impl MapData {
         let mut max_y = 0u16;
         let mut found = false;
         for (key, chunk) in &self.chunks {
-            if key.z != z { continue; }
+            if key.z != z {
+                continue;
+            }
             for tile in chunk.values() {
                 min_x = min_x.min(tile.x);
                 min_y = min_y.min(tile.y);
@@ -362,12 +385,17 @@ impl MapData {
                 found = true;
             }
         }
-        if found { Some((min_x, min_y, max_x, max_y)) } else { None }
+        if found {
+            Some((min_x, min_y, max_x, max_y))
+        } else {
+            None
+        }
     }
 
     /// Count tiles belonging to a specific house.
     pub fn house_tile_count(&self, house_id: u32) -> usize {
-        self.chunks.values()
+        self.chunks
+            .values()
             .flat_map(|c| c.values())
             .filter(|t| t.house_id == Some(house_id))
             .count()

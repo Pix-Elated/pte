@@ -2,7 +2,9 @@
 
 use egui::{Color32, Stroke};
 
-use crate::state::{AssetStatus, EditorMode, EditorState, LoadedAssets, LoadingProgress, ToolType, WorkspaceTab};
+use crate::state::{
+    AssetStatus, EditorMode, EditorState, LoadedAssets, LoadingProgress, ToolType, WorkspaceTab,
+};
 
 pub struct MapEditorApp {
     pub state: EditorState,
@@ -25,7 +27,8 @@ impl MapEditorApp {
 
         // Auto-discover: scan for project assets on startup
         // Priority: last known scan root → exe directory → working directory
-        let scan_root = config.last_scan_root
+        let scan_root = config
+            .last_scan_root
             .as_ref()
             .filter(|p| p.is_dir())
             .cloned()
@@ -34,7 +37,10 @@ impl MapEditorApp {
                 let exe = std::env::current_exe().ok()?;
                 let mut dir = exe.parent()?;
                 for _ in 0..6 {
-                    if dir.join("client").is_dir() || dir.join("canary").is_dir() || dir.join("data").is_dir() {
+                    if dir.join("client").is_dir()
+                        || dir.join("canary").is_dir()
+                        || dir.join("data").is_dir()
+                    {
                         return Some(dir.to_path_buf());
                     }
                     dir = dir.parent()?;
@@ -70,7 +76,8 @@ impl MapEditorApp {
                             // If we have a pending map load but no assets, auto-trigger load
                             if self.state.pending_map_load.is_some() && !self.state.assets_ready() {
                                 if let Some(project) = result.projects.first() {
-                                    self.state.pending_asset_load = Some(project.catalog_dir.clone());
+                                    self.state.pending_asset_load =
+                                        Some(project.catalog_dir.clone());
                                 }
                             }
                         }
@@ -121,7 +128,8 @@ impl MapEditorApp {
                     ctx.request_repaint();
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.state.asset_status = AssetStatus::Error("Loading thread crashed".to_string());
+                    self.state.asset_status =
+                        AssetStatus::Error("Loading thread crashed".to_string());
                     self.state.loader.asset_rx = None;
                     self.state.loader.progress = None;
                 }
@@ -191,7 +199,10 @@ impl MapEditorApp {
     fn update_title(&self, ctx: &egui::Context) {
         let title = match &self.state.map_path {
             Some(path) => {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("map.otbm");
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("map.otbm");
                 if self.state.is_dirty() {
                     format!("*{} — Pixelated's Tibia Editor", name)
                 } else {
@@ -278,7 +289,11 @@ impl MapEditorApp {
                     p.message = format!("Decompressing sprite sheets… ({}/{})", done, total);
                 }
             });
-            tracing::info!("Loaded {} sprite sheets ({} total)", sheets.len(), total_sheets);
+            tracing::info!(
+                "Loaded {} sprite sheets ({} total)",
+                sheets.len(),
+                total_sheets
+            );
 
             // ── Stage 4: Parse main map ──
             let (map, map_path_final, spawns) = if let Some(ref mp) = map_path {
@@ -329,12 +344,20 @@ impl MapEditorApp {
                                         }
                                         tracing::info!("Merged overlay {}", overlay_path.display());
                                     }
-                                    Err(e) => tracing::warn!("Failed overlay {}: {e:#}", overlay_path.display()),
+                                    Err(e) => tracing::warn!(
+                                        "Failed overlay {}: {e:#}",
+                                        overlay_path.display()
+                                    ),
                                 }
-                                let frac = 0.72 + 0.08 * ((i + 1) as f32 / custom_maps.len() as f32);
+                                let frac =
+                                    0.72 + 0.08 * ((i + 1) as f32 / custom_maps.len() as f32);
                                 if let Ok(mut p) = progress.lock() {
                                     p.progress = frac;
-                                    p.message = format!("Merging overlays… ({}/{})", i + 1, custom_maps.len());
+                                    p.message = format!(
+                                        "Merging overlays… ({}/{})",
+                                        i + 1,
+                                        custom_maps.len()
+                                    );
                                 }
                             }
                         }
@@ -515,7 +538,9 @@ impl MapEditorApp {
 
         tracing::info!(
             "Z range: {}–{}, surface: {}",
-            self.state.z_min, self.state.z_max, self.state.z_surface
+            self.state.z_min,
+            self.state.z_max,
+            self.state.z_surface
         );
 
         // Center camera
@@ -531,8 +556,12 @@ impl MapEditorApp {
     }
 
     fn autosave(&self) {
-        let Some(ref map) = self.state.map_data else { return };
-        let Some(ref original) = self.state.map_path else { return };
+        let Some(ref map) = self.state.map_data else {
+            return;
+        };
+        let Some(ref original) = self.state.map_path else {
+            return;
+        };
 
         // Write to a .autosave sibling file, not the original
         let mut autosave_path = original.clone();
@@ -555,7 +584,10 @@ impl MapEditorApp {
             None => return,
         };
 
-        let default_name = self.state.map_path.as_ref()
+        let default_name = self
+            .state
+            .map_path
+            .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .unwrap_or("map.otbm");
@@ -589,7 +621,9 @@ impl MapEditorApp {
             return;
         };
         let path = path.clone();
-        let Some(ref map) = self.state.map_data else { return };
+        let Some(ref map) = self.state.map_data else {
+            return;
+        };
 
         // Create .bak backup of the existing file before overwriting
         if path.exists() {
@@ -611,14 +645,21 @@ impl MapEditorApp {
 
     /// Save spawns to spawn.xml next to the map file.
     fn save_spawns(&self) {
-        if self.state.spawns.is_empty() { return; }
+        if self.state.spawns.is_empty() {
+            return;
+        }
         if let Some(ref map_path) = self.state.map_path {
             let spawn_path = map_path.with_file_name(
-                if self.state.map_data.as_ref().map_or(true, |m| m.spawn_file.is_empty()) {
+                if self
+                    .state
+                    .map_data
+                    .as_ref()
+                    .map_or(true, |m| m.spawn_file.is_empty())
+                {
                     "spawn.xml".to_string()
                 } else {
                     self.state.map_data.as_ref().unwrap().spawn_file.clone()
-                }
+                },
             );
             if let Err(e) = crate::spawn_xml::write_spawns(&self.state.spawns, &spawn_path) {
                 tracing::error!("Failed to save spawns: {e:#}");
@@ -628,8 +669,12 @@ impl MapEditorApp {
 
     /// Move selected tiles by (dx, dy) — arrow key nudge.
     fn nudge_selection(&mut self, dx: i32, dy: i32) {
-        let Some(sel) = self.state.selection else { return };
-        let Some(ref mut map) = self.state.map_data else { return };
+        let Some(sel) = self.state.selection else {
+            return;
+        };
+        let Some(ref mut map) = self.state.map_data else {
+            return;
+        };
         let z = self.state.camera.z_level;
 
         let mut undo_before = Vec::new();
@@ -740,10 +785,9 @@ impl MapEditorApp {
                     ui.menu_button("Recent Maps", |ui| {
                         let mut load_path = None;
                         for path in &self.state.recent_files {
-                            let label = path.file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("???");
-                            if ui.button(label)
+                            let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("???");
+                            if ui
+                                .button(label)
                                 .on_hover_text(path.display().to_string())
                                 .clicked()
                             {
@@ -767,7 +811,10 @@ impl MapEditorApp {
                     ui.close_menu();
                 }
                 if ui
-                    .add_enabled(save_enabled, egui::Button::new("Save As...  (Ctrl+Shift+S)"))
+                    .add_enabled(
+                        save_enabled,
+                        egui::Button::new("Save As...  (Ctrl+Shift+S)"),
+                    )
                     .clicked()
                 {
                     self.state.pending_save_as = true;
@@ -817,19 +864,31 @@ impl MapEditorApp {
                 let has_sel = crate::clipboard::has_selection(&self.state);
                 let has_clip = crate::clipboard::has_clipboard(&self.state);
 
-                if ui.add_enabled(has_sel, egui::Button::new("Cut  (Ctrl+X)")).clicked() {
+                if ui
+                    .add_enabled(has_sel, egui::Button::new("Cut  (Ctrl+X)"))
+                    .clicked()
+                {
                     crate::clipboard::cut_selection(&mut self.state);
                     ui.close_menu();
                 }
-                if ui.add_enabled(has_sel, egui::Button::new("Copy  (Ctrl+C)")).clicked() {
+                if ui
+                    .add_enabled(has_sel, egui::Button::new("Copy  (Ctrl+C)"))
+                    .clicked()
+                {
                     crate::clipboard::copy_selection(&mut self.state);
                     ui.close_menu();
                 }
-                if ui.add_enabled(has_clip, egui::Button::new("Paste  (Ctrl+V)")).clicked() {
+                if ui
+                    .add_enabled(has_clip, egui::Button::new("Paste  (Ctrl+V)"))
+                    .clicked()
+                {
                     self.state.paste_preview = true;
                     ui.close_menu();
                 }
-                if ui.add_enabled(has_sel, egui::Button::new("Delete  (Del)")).clicked() {
+                if ui
+                    .add_enabled(has_sel, egui::Button::new("Delete  (Del)"))
+                    .clicked()
+                {
                     crate::clipboard::delete_selection(&mut self.state);
                     ui.close_menu();
                 }
@@ -848,11 +907,17 @@ impl MapEditorApp {
                 ui.separator();
 
                 // Selection operations
-                if ui.add_enabled(has_sel, egui::Button::new("Randomize Selection")).clicked() {
+                if ui
+                    .add_enabled(has_sel, egui::Button::new("Randomize Selection"))
+                    .clicked()
+                {
                     crate::selection_ops::randomize_selection(&mut self.state);
                     ui.close_menu();
                 }
-                if ui.add_enabled(has_sel, egui::Button::new("Borderize Selection")).clicked() {
+                if ui
+                    .add_enabled(has_sel, egui::Button::new("Borderize Selection"))
+                    .clicked()
+                {
                     crate::selection_ops::borderize_selection(&mut self.state);
                     ui.close_menu();
                 }
@@ -860,7 +925,11 @@ impl MapEditorApp {
                 ui.separator();
 
                 // Eraser flags mode toggle
-                let flags_label = if self.state.eraser_flags_only { "✓ Eraser: Flags Only" } else { "  Eraser: Flags Only" };
+                let flags_label = if self.state.eraser_flags_only {
+                    "✓ Eraser: Flags Only"
+                } else {
+                    "  Eraser: Flags Only"
+                };
                 if ui.button(flags_label).clicked() {
                     self.state.eraser_flags_only = !self.state.eraser_flags_only;
                     ui.close_menu();
@@ -895,13 +964,21 @@ impl MapEditorApp {
 
                 ui.separator();
 
-                let minimap_label = if self.state.show_minimap { "✓ Minimap" } else { "  Minimap" };
+                let minimap_label = if self.state.show_minimap {
+                    "✓ Minimap"
+                } else {
+                    "  Minimap"
+                };
                 if ui.button(minimap_label).clicked() {
                     self.state.show_minimap = !self.state.show_minimap;
                     ui.close_menu();
                 }
 
-                let anim_label = if self.state.animate_sprites { "⏸ Pause Animations" } else { "▶ Play Animations" };
+                let anim_label = if self.state.animate_sprites {
+                    "⏸ Pause Animations"
+                } else {
+                    "▶ Play Animations"
+                };
                 if ui.button(anim_label).clicked() {
                     self.state.animate_sprites = !self.state.animate_sprites;
                     ui.close_menu();
@@ -973,7 +1050,11 @@ impl MapEditorApp {
                     ui.close_menu();
                 }
 
-                let perf_label = if self.state.show_perf_monitor { "✓ Performance Monitor" } else { "  Performance Monitor" };
+                let perf_label = if self.state.show_perf_monitor {
+                    "✓ Performance Monitor"
+                } else {
+                    "  Performance Monitor"
+                };
                 if ui.button(perf_label).clicked() {
                     self.state.show_perf_monitor = !self.state.show_perf_monitor;
                     ui.close_menu();
@@ -984,11 +1065,17 @@ impl MapEditorApp {
                 // Nav history
                 let can_back = self.state.nav_history.can_go_back();
                 let can_fwd = self.state.nav_history.can_go_forward();
-                if ui.add_enabled(can_back, egui::Button::new("← Go Back")).clicked() {
+                if ui
+                    .add_enabled(can_back, egui::Button::new("← Go Back"))
+                    .clicked()
+                {
                     crate::nav_history::go_back(&mut self.state);
                     ui.close_menu();
                 }
-                if ui.add_enabled(can_fwd, egui::Button::new("→ Go Forward")).clicked() {
+                if ui
+                    .add_enabled(can_fwd, egui::Button::new("→ Go Forward"))
+                    .clicked()
+                {
                     crate::nav_history::go_forward(&mut self.state);
                     ui.close_menu();
                 }
@@ -997,19 +1084,31 @@ impl MapEditorApp {
             ui.menu_button("Map", |ui| {
                 let has_map = self.state.map_data.is_some();
 
-                if ui.add_enabled(has_map, egui::Button::new("Map Properties...")).clicked() {
+                if ui
+                    .add_enabled(has_map, egui::Button::new("Map Properties..."))
+                    .clicked()
+                {
                     self.state.show_map_props = true;
                     ui.close_menu();
                 }
-                if ui.add_enabled(has_map, egui::Button::new("Map Cleanup...")).clicked() {
+                if ui
+                    .add_enabled(has_map, egui::Button::new("Map Cleanup..."))
+                    .clicked()
+                {
                     self.state.show_cleanup_dialog = true;
                     ui.close_menu();
                 }
-                if ui.add_enabled(has_map, egui::Button::new("Export Minimap PNG...")).clicked() {
+                if ui
+                    .add_enabled(has_map, egui::Button::new("Export Minimap PNG..."))
+                    .clicked()
+                {
                     self.state.show_minimap_export = true;
                     ui.close_menu();
                 }
-                if ui.add_enabled(has_map, egui::Button::new("Import / Merge Map...")).clicked() {
+                if ui
+                    .add_enabled(has_map, egui::Button::new("Import / Merge Map..."))
+                    .clicked()
+                {
                     self.state.show_import_dialog = true;
                     ui.close_menu();
                 }
@@ -1017,7 +1116,11 @@ impl MapEditorApp {
                 ui.separator();
 
                 // Zone flag brushes
-                ui.label(egui::RichText::new("Zone Brush").size(10.0).color(crate::theme::TEXT_MUTED));
+                ui.label(
+                    egui::RichText::new("Zone Brush")
+                        .size(10.0)
+                        .color(crate::theme::TEXT_MUTED),
+                );
                 for &flag in crate::zone_brush::ZoneFlag::ALL {
                     let active = self.state.active_zone_flag == Some(flag);
                     let label = if active {
@@ -1035,8 +1138,7 @@ impl MapEditorApp {
                         ui.close_menu();
                     }
                 }
-                if self.state.active_zone_flag.is_some()
-                    && ui.button("Clear Zone Brush").clicked()
+                if self.state.active_zone_flag.is_some() && ui.button("Clear Zone Brush").clicked()
                 {
                     self.state.active_zone_flag = None;
                     ui.close_menu();
@@ -1075,10 +1177,12 @@ impl MapEditorApp {
             if i.modifiers.ctrl && i.key_pressed(egui::Key::X) {
                 crate::clipboard::cut_selection(&mut self.state);
             }
-            if i.modifiers.ctrl && i.key_pressed(egui::Key::V)
-                && crate::clipboard::has_clipboard(&self.state) {
-                    self.state.paste_preview = true;
-                }
+            if i.modifiers.ctrl
+                && i.key_pressed(egui::Key::V)
+                && crate::clipboard::has_clipboard(&self.state)
+            {
+                self.state.paste_preview = true;
+            }
             if i.key_pressed(egui::Key::Delete) {
                 crate::clipboard::delete_selection(&mut self.state);
             }
@@ -1103,25 +1207,45 @@ impl MapEditorApp {
             }
 
             // Tool hotkeys
-            if i.key_pressed(egui::Key::B) { self.state.active_tool = ToolType::Brush; }
-            if i.key_pressed(egui::Key::E) { self.state.active_tool = ToolType::Eraser; }
-            if i.key_pressed(egui::Key::G) { self.state.active_tool = ToolType::Fill; }
-            if i.key_pressed(egui::Key::S) && !i.modifiers.ctrl && !i.modifiers.shift { self.state.active_tool = ToolType::Select; }
-            if i.key_pressed(egui::Key::I) { self.state.active_tool = ToolType::Eyedropper; }
-            if i.key_pressed(egui::Key::D) { self.state.active_tool = ToolType::Door; }
-            if i.key_pressed(egui::Key::C) { self.state.active_tool = ToolType::Creature; }
-            if i.key_pressed(egui::Key::N) { self.state.active_tool = ToolType::Spawn; }
-            if i.key_pressed(egui::Key::W) && !i.modifiers.ctrl { self.state.active_tool = ToolType::Waypoint; }
+            if i.key_pressed(egui::Key::B) {
+                self.state.active_tool = ToolType::Brush;
+            }
+            if i.key_pressed(egui::Key::E) {
+                self.state.active_tool = ToolType::Eraser;
+            }
+            if i.key_pressed(egui::Key::G) {
+                self.state.active_tool = ToolType::Fill;
+            }
+            if i.key_pressed(egui::Key::S) && !i.modifiers.ctrl && !i.modifiers.shift {
+                self.state.active_tool = ToolType::Select;
+            }
+            if i.key_pressed(egui::Key::I) {
+                self.state.active_tool = ToolType::Eyedropper;
+            }
+            if i.key_pressed(egui::Key::D) {
+                self.state.active_tool = ToolType::Door;
+            }
+            if i.key_pressed(egui::Key::C) {
+                self.state.active_tool = ToolType::Creature;
+            }
+            if i.key_pressed(egui::Key::N) {
+                self.state.active_tool = ToolType::Spawn;
+            }
+            if i.key_pressed(egui::Key::W) && !i.modifiers.ctrl {
+                self.state.active_tool = ToolType::Waypoint;
+            }
 
             // Z-level (clamped to detected map range)
             if i.key_pressed(egui::Key::PageUp) {
-                self.state.camera.z_level = self.state.camera.z_level
+                self.state.camera.z_level = self
+                    .state
+                    .camera
+                    .z_level
                     .saturating_sub(1)
                     .max(self.state.z_min);
             }
             if i.key_pressed(egui::Key::PageDown) {
-                self.state.camera.z_level = (self.state.camera.z_level + 1)
-                    .min(self.state.z_max);
+                self.state.camera.z_level = (self.state.camera.z_level + 1).min(self.state.z_max);
             }
 
             // Navigation history: Alt+Left / Alt+Right
@@ -1136,10 +1260,18 @@ impl MapEditorApp {
             if self.state.selection.is_some() && !i.modifiers.alt && !i.modifiers.ctrl {
                 let mut dx = 0i32;
                 let mut dy = 0i32;
-                if i.key_pressed(egui::Key::ArrowLeft) { dx = -1; }
-                if i.key_pressed(egui::Key::ArrowRight) { dx = 1; }
-                if i.key_pressed(egui::Key::ArrowUp) { dy = -1; }
-                if i.key_pressed(egui::Key::ArrowDown) { dy = 1; }
+                if i.key_pressed(egui::Key::ArrowLeft) {
+                    dx = -1;
+                }
+                if i.key_pressed(egui::Key::ArrowRight) {
+                    dx = 1;
+                }
+                if i.key_pressed(egui::Key::ArrowUp) {
+                    dy = -1;
+                }
+                if i.key_pressed(egui::Key::ArrowDown) {
+                    dy = 1;
+                }
 
                 if dx != 0 || dy != 0 {
                     self.state.pending_selection_nudge = Some((dx, dy));
@@ -1149,10 +1281,18 @@ impl MapEditorApp {
             // Arrow key camera pan (when no selection, no modifiers)
             if self.state.selection.is_none() && !i.modifiers.alt && !i.modifiers.ctrl {
                 let pan_speed = 4.0 / self.state.camera.zoom as f64;
-                if i.key_pressed(egui::Key::ArrowLeft)  { self.state.camera.center_x -= pan_speed; }
-                if i.key_pressed(egui::Key::ArrowRight) { self.state.camera.center_x += pan_speed; }
-                if i.key_pressed(egui::Key::ArrowUp)    { self.state.camera.center_y -= pan_speed; }
-                if i.key_pressed(egui::Key::ArrowDown)  { self.state.camera.center_y += pan_speed; }
+                if i.key_pressed(egui::Key::ArrowLeft) {
+                    self.state.camera.center_x -= pan_speed;
+                }
+                if i.key_pressed(egui::Key::ArrowRight) {
+                    self.state.camera.center_x += pan_speed;
+                }
+                if i.key_pressed(egui::Key::ArrowUp) {
+                    self.state.camera.center_y -= pan_speed;
+                }
+                if i.key_pressed(egui::Key::ArrowDown) {
+                    self.state.camera.center_y += pan_speed;
+                }
             }
 
             // Keyboard zoom: + / - (also = for numpad-less keyboards)
@@ -1186,7 +1326,10 @@ impl MapEditorApp {
                     let z = self.state.camera.z_level;
                     if let Some((min_x, min_y, max_x, max_y)) = map.xy_extents(z) {
                         self.state.selection = Some(crate::state::TileSelection {
-                            x1: min_x, y1: min_y, x2: max_x, y2: max_y,
+                            x1: min_x,
+                            y1: min_y,
+                            x2: max_x,
+                            y2: max_y,
                         });
                     }
                 }
@@ -1194,8 +1337,16 @@ impl MapEditorApp {
 
             // Hotkey recall: F1-F10
             let fkeys = [
-                egui::Key::F1, egui::Key::F2, egui::Key::F3, egui::Key::F4, egui::Key::F5,
-                egui::Key::F6, egui::Key::F7, egui::Key::F8, egui::Key::F9, egui::Key::F10,
+                egui::Key::F1,
+                egui::Key::F2,
+                egui::Key::F3,
+                egui::Key::F4,
+                egui::Key::F5,
+                egui::Key::F6,
+                egui::Key::F7,
+                egui::Key::F8,
+                egui::Key::F9,
+                egui::Key::F10,
             ];
             for (idx, &fkey) in fkeys.iter().enumerate() {
                 if i.key_pressed(fkey) {
@@ -1237,9 +1388,11 @@ fn separator_line(ui: &mut egui::Ui) {
 /// Prominent workspace tab bar — renders as a top panel.
 fn show_workspace_tabs(ctx: &egui::Context, active: &mut WorkspaceTab) {
     egui::TopBottomPanel::top("workspace_tabs")
-        .frame(egui::Frame::NONE
-            .fill(crate::theme::BG_PANEL)
-            .inner_margin(egui::Margin::symmetric(0, 0)))
+        .frame(
+            egui::Frame::NONE
+                .fill(crate::theme::BG_PANEL)
+                .inner_margin(egui::Margin::symmetric(0, 0)),
+        )
         .exact_height(32.0)
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
@@ -1380,7 +1533,11 @@ impl eframe::App for MapEditorApp {
         }
 
         // Show loading overlay if assets are loading
-        if let AssetStatus::Loading { ref message, progress } = self.state.asset_status {
+        if let AssetStatus::Loading {
+            ref message,
+            progress,
+        } = self.state.asset_status
+        {
             // Request continuous repaints so stage transitions are visible
             ctx.request_repaint();
 
@@ -1399,9 +1556,12 @@ impl eframe::App for MapEditorApp {
                         ui.add_space(16.0);
 
                         // Stage indicators
-                        let stage = self.state.loader.progress.as_ref().and_then(|p| {
-                            p.lock().ok().map(|p| p.stage)
-                        });
+                        let stage = self
+                            .state
+                            .loader
+                            .progress
+                            .as_ref()
+                            .and_then(|p| p.lock().ok().map(|p| p.stage));
                         let stages = [
                             (crate::state::LoadingStage::Catalog, "Catalog"),
                             (crate::state::LoadingStage::Appearances, "Appearances"),
@@ -1416,7 +1576,9 @@ impl eframe::App for MapEditorApp {
                             for (s, label) in &stages {
                                 let (icon, color) = match stage {
                                     Some(current) if current == *s => ("⏳", crate::theme::ACCENT),
-                                    Some(current) if (current as u8) > (*s as u8) => ("✓", crate::theme::SUCCESS),
+                                    Some(current) if (current as u8) > (*s as u8) => {
+                                        ("✓", crate::theme::SUCCESS)
+                                    }
                                     _ => ("○", crate::theme::TEXT_MUTED),
                                 };
                                 ui.label(
@@ -1502,7 +1664,12 @@ impl eframe::App for MapEditorApp {
 
         // Asset scanner dialog (can be opened from any mode)
         match crate::asset_scanner::show(ctx, &mut self.state.scanner) {
-            crate::asset_scanner::ScannerAction::LoadProject { asset_dir, main_map, custom_maps, project } => {
+            crate::asset_scanner::ScannerAction::LoadProject {
+                asset_dir,
+                main_map,
+                custom_maps,
+                project,
+            } => {
                 self.state.pending_asset_load = Some(asset_dir);
                 self.state.pending_map_load = Some(main_map);
                 self.state.pending_custom_maps = custom_maps;
@@ -1602,15 +1769,18 @@ impl MapEditorApp {
                     .min_size(egui::vec2(240.0, 36.0));
 
                     if ui.add(new_btn).clicked() {
-                        self.state.new_project_wizard = crate::new_project::NewProjectWizard::default();
+                        self.state.new_project_wizard =
+                            crate::new_project::NewProjectWizard::default();
                         self.state.new_project_wizard.open = true;
                     }
 
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new("Create a fresh project with blank assets from scratch")
-                            .size(10.5)
-                            .color(theme::TEXT_MUTED),
+                        egui::RichText::new(
+                            "Create a fresh project with blank assets from scratch",
+                        )
+                        .size(10.5)
+                        .color(theme::TEXT_MUTED),
                     );
 
                     // ── Scanning indicator ──
@@ -1658,10 +1828,9 @@ impl MapEditorApp {
 
                         let mut clicked_path = None;
                         for path in &self.state.recent_files {
-                            let display = path.file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("?");
-                            let parent = path.parent()
+                            let display = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                            let parent = path
+                                .parent()
                                 .and_then(|p| p.file_name())
                                 .and_then(|n| n.to_str())
                                 .unwrap_or("");
@@ -1671,16 +1840,19 @@ impl MapEditorApp {
                                 format!("{}  ·  {}", display, parent)
                             };
 
-                            if ui.add(
-                                egui::Button::new(
-                                    egui::RichText::new(&label)
-                                        .size(11.0)
-                                        .color(theme::TEXT_PRIMARY),
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(&label)
+                                            .size(11.0)
+                                            .color(theme::TEXT_PRIMARY),
+                                    )
+                                    .fill(Color32::TRANSPARENT)
+                                    .stroke(Stroke::NONE)
+                                    .min_size(egui::vec2(240.0, 22.0)),
                                 )
-                                .fill(Color32::TRANSPARENT)
-                                .stroke(Stroke::NONE)
-                                .min_size(egui::vec2(240.0, 22.0)),
-                            ).clicked() {
+                                .clicked()
+                            {
                                 clicked_path = Some(path.clone());
                             }
                         }
@@ -1704,7 +1876,8 @@ impl MapEditorApp {
                                     self.state.scanner.scan_rx = Some(rx);
                                     self.state.scanner.scanning = true;
                                     std::thread::spawn(move || {
-                                        let result = crate::asset_scanner::scan_directory(&parent, 6);
+                                        let result =
+                                            crate::asset_scanner::scan_directory(&parent, 6);
                                         let _ = tx.send(result);
                                     });
                                 }
@@ -1825,24 +1998,32 @@ impl MapEditorApp {
         // Status bar
         egui::TopBottomPanel::bottom("status_bar")
             .max_height(22.0)
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_BASE)
-                .inner_margin(egui::Margin::symmetric(8, 2)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_BASE)
+                    .inner_margin(egui::Margin::symmetric(8, 2)),
+            )
             .show(ctx, |ui| {
                 crate::status_bar::show(ui, &self.state);
             });
 
         // Toolbar
         egui::TopBottomPanel::top("toolbar")
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_SURFACE)
-                .inner_margin(egui::Margin::symmetric(6, 3)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_SURFACE)
+                    .inner_margin(egui::Margin::symmetric(6, 3)),
+            )
             .show(ctx, |ui| {
                 let action = crate::toolbar::show(ui, &mut self.state);
                 match action {
                     crate::toolbar::ToolbarAction::None => {}
-                    crate::toolbar::ToolbarAction::Undo => { self.state.undo(); }
-                    crate::toolbar::ToolbarAction::Redo => { self.state.redo(); }
+                    crate::toolbar::ToolbarAction::Undo => {
+                        self.state.undo();
+                    }
+                    crate::toolbar::ToolbarAction::Redo => {
+                        self.state.redo();
+                    }
                     crate::toolbar::ToolbarAction::ZoomIn => {
                         self.state.camera.zoom_in();
                     }
@@ -1869,9 +2050,11 @@ impl MapEditorApp {
         egui::SidePanel::left("sprite_picker")
             .default_width(260.0)
             .min_width(200.0)
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_PANEL)
-                .inner_margin(egui::Margin::same(6)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_PANEL)
+                    .inner_margin(egui::Margin::same(6)),
+            )
             .show(ctx, |ui| {
                 if self.state.brush_registry.count() > 0 {
                     section_header(ui, "Brushes");
@@ -1889,9 +2072,11 @@ impl MapEditorApp {
             .default_width(220.0)
             .min_width(160.0)
             .max_width(320.0)
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_PANEL)
-                .inner_margin(egui::Margin::same(6)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_PANEL)
+                    .inner_margin(egui::Margin::same(6)),
+            )
             .show(ctx, |ui| {
                 section_header(ui, "Layers");
                 crate::layers::show(ui, &mut self.state);
@@ -1909,8 +2094,10 @@ impl MapEditorApp {
                                 cy: y as i32 / pte_otbm::CHUNK_SIZE,
                                 z,
                             };
-                            let local = ((x as i32 % pte_otbm::CHUNK_SIZE) as u8,
-                                         (y as i32 % pte_otbm::CHUNK_SIZE) as u8);
+                            let local = (
+                                (x as i32 % pte_otbm::CHUNK_SIZE) as u8,
+                                (y as i32 % pte_otbm::CHUNK_SIZE) as u8,
+                            );
                             if let Some(chunk) = map.chunks.get_mut(&key) {
                                 if let Some(tile) = chunk.get_mut(&local) {
                                     if index == usize::MAX {
@@ -1996,15 +2183,24 @@ impl MapEditorApp {
 
                         ui.menu_button("Sprite", |ui| {
                             let has_selection = self.state.viewer_selected_id.is_some();
-                            if ui.add_enabled(has_selection, egui::Button::new("Edit Selected")).clicked() {
+                            if ui
+                                .add_enabled(has_selection, egui::Button::new("Edit Selected"))
+                                .clicked()
+                            {
                                 self.open_sprite_editor(ctx);
                                 ui.close_menu();
                             }
-                            if ui.add_enabled(has_selection, egui::Button::new("Duplicate")).clicked() {
+                            if ui
+                                .add_enabled(has_selection, egui::Button::new("Duplicate"))
+                                .clicked()
+                            {
                                 self.duplicate_sprite();
                                 ui.close_menu();
                             }
-                            if ui.add_enabled(has_selection, egui::Button::new("Delete")).clicked() {
+                            if ui
+                                .add_enabled(has_selection, egui::Button::new("Delete"))
+                                .clicked()
+                            {
                                 self.delete_sprite();
                                 ui.close_menu();
                             }
@@ -2017,7 +2213,10 @@ impl MapEditorApp {
                                 self.import_sprite_from_png(ctx);
                                 ui.close_menu();
                             }
-                            if ui.add_enabled(has_selection, egui::Button::new("Export to PNG…")).clicked() {
+                            if ui
+                                .add_enabled(has_selection, egui::Button::new("Export to PNG…"))
+                                .clicked()
+                            {
                                 self.export_sprite_to_png();
                                 ui.close_menu();
                             }
@@ -2031,90 +2230,104 @@ impl MapEditorApp {
 
         // Action bar
         egui::TopBottomPanel::top("sprite_actions")
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_SURFACE)
-                .inner_margin(egui::Margin::symmetric(6, 3)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_SURFACE)
+                    .inner_margin(egui::Margin::symmetric(6, 3)),
+            )
             .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                let has_selection = self.state.selected_item_id.is_some();
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 3.0;
+                    let has_selection = self.state.selected_item_id.is_some();
 
-                let action_btn = |ui: &mut egui::Ui, label: &str, enabled: bool| -> bool {
-                    let btn = egui::Button::new(
-                        egui::RichText::new(label).size(11.0),
-                    ).min_size(egui::vec2(0.0, 22.0));
-                    ui.add_enabled(enabled, btn).clicked()
-                };
+                    let action_btn = |ui: &mut egui::Ui, label: &str, enabled: bool| -> bool {
+                        let btn = egui::Button::new(egui::RichText::new(label).size(11.0))
+                            .min_size(egui::vec2(0.0, 22.0));
+                        ui.add_enabled(enabled, btn).clicked()
+                    };
 
-                if action_btn(ui, "New", true) {
-                    self.add_blank_sprite();
-                }
-                if action_btn(ui, "Edit", has_selection) {
-                    self.open_sprite_editor(ctx);
-                }
-                if action_btn(ui, "Duplicate", has_selection) {
-                    self.duplicate_sprite();
-                }
-                if action_btn(ui, "Delete", has_selection) {
-                    self.delete_sprite();
-                }
+                    if action_btn(ui, "New", true) {
+                        self.add_blank_sprite();
+                    }
+                    if action_btn(ui, "Edit", has_selection) {
+                        self.open_sprite_editor(ctx);
+                    }
+                    if action_btn(ui, "Duplicate", has_selection) {
+                        self.duplicate_sprite();
+                    }
+                    if action_btn(ui, "Delete", has_selection) {
+                        self.delete_sprite();
+                    }
 
-                ui.add_space(4.0);
+                    ui.add_space(4.0);
 
-                if action_btn(ui, "Import", true) {
-                    self.import_sprite_from_png(ctx);
-                }
-                if action_btn(ui, "Export", has_selection) {
-                    self.export_sprite_to_png();
-                }
+                    if action_btn(ui, "Import", true) {
+                        self.import_sprite_from_png(ctx);
+                    }
+                    if action_btn(ui, "Export", has_selection) {
+                        self.export_sprite_to_png();
+                    }
 
-                ui.add_space(4.0);
+                    ui.add_space(4.0);
 
-                if action_btn(ui, "Save All", true) {
-                    self.save_all_sprite_sheets();
-                }
+                    if action_btn(ui, "Save All", true) {
+                        self.save_all_sprite_sheets();
+                    }
 
-                // Selected info (right-aligned)
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(id) = self.state.viewer_selected_id {
-                        let mut label = format!("#{}", id);
-                        if let Some(ref apps) = self.state.appearances {
-                            if let Some(app) = apps.get(pte_appearances::Category::Object, id) {
-                                if let Some(ref name) = app.name {
-                                    label = format!("{} — #{}", name, id);
+                    // Selected info (right-aligned)
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if let Some(id) = self.state.viewer_selected_id {
+                            let mut label = format!("#{}", id);
+                            if let Some(ref apps) = self.state.appearances {
+                                if let Some(app) = apps.get(pte_appearances::Category::Object, id) {
+                                    if let Some(ref name) = app.name {
+                                        label = format!("{} — #{}", name, id);
+                                    }
                                 }
                             }
+                            ui.label(
+                                egui::RichText::new(label)
+                                    .size(11.0)
+                                    .color(crate::theme::TEXT_SECONDARY),
+                            );
                         }
-                        ui.label(
-                            egui::RichText::new(label)
-                                .size(11.0)
-                                .color(crate::theme::TEXT_SECONDARY),
-                        );
-                    }
+                    });
                 });
             });
-        });
 
         // Status bar
         egui::TopBottomPanel::bottom("sprite_status")
             .max_height(22.0)
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_BASE)
-                .inner_margin(egui::Margin::symmetric(8, 2)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_BASE)
+                    .inner_margin(egui::Margin::symmetric(8, 2)),
+            )
             .show(ctx, |ui| {
-                let text = |s: &str| egui::RichText::new(s).size(10.5).color(crate::theme::TEXT_MUTED);
+                let text = |s: &str| {
+                    egui::RichText::new(s)
+                        .size(10.5)
+                        .color(crate::theme::TEXT_MUTED)
+                };
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 12.0;
                     if let Some(ref apps) = self.state.appearances {
                         ui.label(text(&format!("{} appearances", apps.total_count())));
                     }
-                    ui.label(text(&format!("{} textures", self.state.sprite_textures.len())));
+                    ui.label(text(&format!(
+                        "{} textures",
+                        self.state.sprite_textures.len()
+                    )));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(
-                            egui::Button::new(
-                                egui::RichText::new("Back to Launcher").size(10.0)
-                            ).min_size(egui::vec2(0.0, 18.0))
-                        ).clicked() {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Back to Launcher").size(10.0),
+                                )
+                                .min_size(egui::vec2(0.0, 18.0)),
+                            )
+                            .clicked()
+                        {
                             self.state.mode = EditorMode::Welcome;
                             self.state.active_tab = WorkspaceTab::MapEditor;
                         }
@@ -2128,9 +2341,11 @@ impl MapEditorApp {
             .min_width(200.0)
             .max_width(360.0)
             .resizable(true)
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_PANEL)
-                .inner_margin(egui::Margin::same(6)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_PANEL)
+                    .inner_margin(egui::Margin::same(6)),
+            )
             .show(ctx, |ui| {
                 section_header(ui, "Details");
                 let action = crate::sprite_detail::show(ui, &mut self.state);
@@ -2138,16 +2353,22 @@ impl MapEditorApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE
-                .fill(crate::theme::BG_PANEL)
-                .inner_margin(egui::Margin::same(6)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(crate::theme::BG_PANEL)
+                    .inner_margin(egui::Margin::same(6)),
+            )
             .show(ctx, |ui| {
-            crate::sprite_picker::show(ui, &mut self.state);
-        });
+                crate::sprite_picker::show(ui, &mut self.state);
+            });
     }
 
     /// Handle actions from the sprite detail panel.
-    fn handle_detail_action(&mut self, action: crate::sprite_detail::DetailAction, ctx: &egui::Context) {
+    fn handle_detail_action(
+        &mut self,
+        action: crate::sprite_detail::DetailAction,
+        ctx: &egui::Context,
+    ) {
         use crate::sprite_detail::DetailAction;
         match action {
             DetailAction::None => {}
@@ -2163,11 +2384,14 @@ impl MapEditorApp {
 
     /// Open the pixel editor for the currently selected sprite.
     fn open_sprite_editor(&mut self, _ctx: &egui::Context) {
-        let Some(item_id) = self.state.effective_selected_id() else { return };
+        let Some(item_id) = self.state.effective_selected_id() else {
+            return;
+        };
 
         // Resolve appearance
         let appearance = if let Some(ref apps) = self.state.appearances {
-            apps.get(pte_appearances::Category::Object, item_id).cloned()
+            apps.get(pte_appearances::Category::Object, item_id)
+                .cloned()
         } else {
             None
         };
@@ -2182,7 +2406,9 @@ impl MapEditorApp {
                     let pw = si.pattern_width.unwrap_or(1);
                     let ph = si.pattern_height.unwrap_or(1);
                     let pd = si.pattern_depth.unwrap_or(1);
-                    let num_frames = si.animation.as_ref()
+                    let num_frames = si
+                        .animation
+                        .as_ref()
                         .map(|a| a.sprite_phase.len() as u32)
                         .unwrap_or(1)
                         .max(1);
@@ -2193,27 +2419,28 @@ impl MapEditorApp {
                         "Sprites".to_string()
                     };
 
-                    app_ctx.frame_groups.push(crate::sprite_editor::FrameGroupInfo {
-                        label,
-                        sprite_ids: si.sprite_id.to_vec(),
-                        layers,
-                        pattern_width: pw,
-                        pattern_height: ph,
-                        pattern_depth: pd,
-                        num_frames,
-                        sprite_w: pw * 32,
-                        sprite_h: ph * 32,
-                    });
+                    app_ctx
+                        .frame_groups
+                        .push(crate::sprite_editor::FrameGroupInfo {
+                            label,
+                            sprite_ids: si.sprite_id.to_vec(),
+                            layers,
+                            pattern_width: pw,
+                            pattern_height: ph,
+                            pattern_depth: pd,
+                            num_frames,
+                            sprite_w: pw * 32,
+                            sprite_h: ph * 32,
+                        });
                 }
             }
         }
 
         // Determine which sprite to load initially
-        let sid = app_ctx.current_sprite_id()
-            .or_else(|| {
-                // Fallback: direct sprite ID
-                Some(item_id)
-            });
+        let sid = app_ctx.current_sprite_id().or_else(|| {
+            // Fallback: direct sprite ID
+            Some(item_id)
+        });
 
         let Some(sid) = sid else { return };
 
@@ -2223,7 +2450,9 @@ impl MapEditorApp {
                 if let Some(pixels) = sheet.get_sprite(sid) {
                     let (w, h) = sheet.sprite_dimensions();
                     self.state.sprite_editor.load_sprite(sid, pixels, w, h);
-                    self.state.sprite_editor.set_appearance_context(app_ctx.clone());
+                    self.state
+                        .sprite_editor
+                        .set_appearance_context(app_ctx.clone());
 
                     // Pre-populate thumbnail textures for all sprites in all frame groups
                     self.state.sprite_editor.thumb_textures.clear();
@@ -2235,7 +2464,10 @@ impl MapEditorApp {
                                 _ctx,
                                 thumb_sid,
                             ) {
-                                self.state.sprite_editor.thumb_textures.insert(thumb_sid, tex);
+                                self.state
+                                    .sprite_editor
+                                    .thumb_textures
+                                    .insert(thumb_sid, tex);
                             }
                         }
                     }
@@ -2248,7 +2480,9 @@ impl MapEditorApp {
     /// Save edited sprite pixels back to the sprite sheet + refresh the GPU texture.
     fn save_edited_sprite(&mut self, ctx: &egui::Context) {
         let editor = &self.state.sprite_editor;
-        let Some(sid) = editor.editing_sprite_id else { return };
+        let Some(sid) = editor.editing_sprite_id else {
+            return;
+        };
         let pixels = editor.pixels.clone();
         let w = editor.sprite_w;
         let h = editor.sprite_h;
@@ -2325,7 +2559,9 @@ impl MapEditorApp {
 
     /// Add a new blank object appearance (32×32 transparent).
     fn add_blank_sprite(&mut self) {
-        let Some(ref mut apps) = self.state.appearances else { return };
+        let Some(ref mut apps) = self.state.appearances else {
+            return;
+        };
 
         // Find the next available object ID
         let next_id = apps.objects.keys().copied().max().unwrap_or(0) + 1;
@@ -2342,7 +2578,9 @@ impl MapEditorApp {
         pte_appearances::upsert_appearance(apps, pte_appearances::Category::Object, new_app);
         // Select the new sprite in whichever tab is active
         match self.state.active_tab {
-            crate::state::WorkspaceTab::SpriteViewer => self.state.viewer_selected_id = Some(next_id),
+            crate::state::WorkspaceTab::SpriteViewer => {
+                self.state.viewer_selected_id = Some(next_id)
+            }
             crate::state::WorkspaceTab::MapEditor => self.state.selected_item_id = Some(next_id),
         }
         tracing::info!("Created blank appearance #{}", next_id);
@@ -2350,8 +2588,12 @@ impl MapEditorApp {
 
     /// Duplicate the selected appearance.
     fn duplicate_sprite(&mut self) {
-        let Some(item_id) = self.state.effective_selected_id() else { return };
-        let Some(ref mut apps) = self.state.appearances else { return };
+        let Some(item_id) = self.state.effective_selected_id() else {
+            return;
+        };
+        let Some(ref mut apps) = self.state.appearances else {
+            return;
+        };
 
         let source = match apps.get(pte_appearances::Category::Object, item_id) {
             Some(a) => a.clone(),
@@ -2364,7 +2606,9 @@ impl MapEditorApp {
         new_app.name = Some(format!("Copy of #{}", item_id));
         pte_appearances::upsert_appearance(apps, pte_appearances::Category::Object, new_app);
         match self.state.active_tab {
-            crate::state::WorkspaceTab::SpriteViewer => self.state.viewer_selected_id = Some(next_id),
+            crate::state::WorkspaceTab::SpriteViewer => {
+                self.state.viewer_selected_id = Some(next_id)
+            }
             crate::state::WorkspaceTab::MapEditor => self.state.selected_item_id = Some(next_id),
         }
         tracing::info!("Duplicated #{} → #{}", item_id, next_id);
@@ -2372,8 +2616,12 @@ impl MapEditorApp {
 
     /// Delete the selected appearance.
     fn delete_sprite(&mut self) {
-        let Some(item_id) = self.state.effective_selected_id() else { return };
-        let Some(ref mut apps) = self.state.appearances else { return };
+        let Some(item_id) = self.state.effective_selected_id() else {
+            return;
+        };
+        let Some(ref mut apps) = self.state.appearances else {
+            return;
+        };
 
         if pte_appearances::remove_appearance(apps, pte_appearances::Category::Object, item_id) {
             match self.state.active_tab {
@@ -2414,7 +2662,9 @@ impl MapEditorApp {
 
     /// Export the selected sprite to a PNG file.
     fn export_sprite_to_png(&self) {
-        let Some(item_id) = self.state.effective_selected_id() else { return };
+        let Some(item_id) = self.state.effective_selected_id() else {
+            return;
+        };
 
         // Resolve to sprite_id
         let sprite_id = if let Some(ref apps) = self.state.appearances {
@@ -2439,7 +2689,9 @@ impl MapEditorApp {
                         let img = image::RgbaImage::from_raw(w, h, pixels)
                             .expect("pixel buffer size mismatch");
                         match img.save(&path) {
-                            Ok(()) => tracing::info!("Exported sprite #{} to {}", sid, path.display()),
+                            Ok(()) => {
+                                tracing::info!("Exported sprite #{} to {}", sid, path.display())
+                            }
                             Err(e) => tracing::error!("Failed to export PNG: {e:#}"),
                         }
                     }

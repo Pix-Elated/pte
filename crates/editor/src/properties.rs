@@ -12,9 +12,16 @@ use crate::theme;
 pub enum PropertiesAction {
     None,
     /// Delete a specific item at (x, y, z, item_index). index=usize::MAX means ground.
-    DeleteItem { x: u16, y: u16, z: u8, index: usize },
+    DeleteItem {
+        x: u16,
+        y: u16,
+        z: u8,
+        index: usize,
+    },
     /// Select/eyedrop item_id
-    SelectItem { item_id: u32 },
+    SelectItem {
+        item_id: u32,
+    },
 }
 
 pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
@@ -51,7 +58,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
             // Ground layer
             if let Some(ground_id) = tile.ground {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Ground").size(10.5).color(theme::TEXT_MUTED));
+                    ui.label(
+                        egui::RichText::new("Ground")
+                            .size(10.5)
+                            .color(theme::TEXT_MUTED),
+                    );
                     let ground_btn = egui::Button::new(
                         egui::RichText::new(format!("#{}", ground_id))
                             .size(10.5)
@@ -59,18 +70,28 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
                     )
                     .fill(Color32::TRANSPARENT)
                     .min_size(egui::vec2(0.0, 16.0));
-                    if ui.add(ground_btn).on_hover_text("Click to select").clicked() {
-                        action = PropertiesAction::SelectItem { item_id: ground_id as u32 };
+                    if ui
+                        .add(ground_btn)
+                        .on_hover_text("Click to select")
+                        .clicked()
+                    {
+                        action = PropertiesAction::SelectItem {
+                            item_id: ground_id as u32,
+                        };
                     }
 
                     // Delete ground
-                    let del = egui::Button::new(
-                        egui::RichText::new("×").size(12.0).color(theme::ERROR),
-                    )
-                    .fill(Color32::TRANSPARENT)
-                    .min_size(egui::vec2(16.0, 16.0));
+                    let del =
+                        egui::Button::new(egui::RichText::new("×").size(12.0).color(theme::ERROR))
+                            .fill(Color32::TRANSPARENT)
+                            .min_size(egui::vec2(16.0, 16.0));
                     if ui.add(del).on_hover_text("Delete ground").clicked() {
-                        action = PropertiesAction::DeleteItem { x: tx, y: ty, z, index: usize::MAX };
+                        action = PropertiesAction::DeleteItem {
+                            x: tx,
+                            y: ty,
+                            z,
+                            index: usize::MAX,
+                        };
                     }
                 });
             } else {
@@ -119,8 +140,14 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
                         )
                         .fill(Color32::TRANSPARENT)
                         .min_size(egui::vec2(0.0, 16.0));
-                        if ui.add(item_btn).on_hover_text("Click to select item").clicked() {
-                            action = PropertiesAction::SelectItem { item_id: item.id as u32 };
+                        if ui
+                            .add(item_btn)
+                            .on_hover_text("Click to select item")
+                            .clicked()
+                        {
+                            action = PropertiesAction::SelectItem {
+                                item_id: item.id as u32,
+                            };
                         }
 
                         // Delete button for this specific item
@@ -130,7 +157,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
                         .fill(Color32::TRANSPARENT)
                         .min_size(egui::vec2(16.0, 16.0));
                         if ui.add(del).on_hover_text("Delete this item").clicked() {
-                            action = PropertiesAction::DeleteItem { x: tx, y: ty, z, index: i };
+                            action = PropertiesAction::DeleteItem {
+                                x: tx,
+                                y: ty,
+                                z,
+                                index: i,
+                            };
                         }
                     });
                 }
@@ -144,11 +176,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
                 (f.no_logout, "NoLogout"),
                 (f.pvp_zone, "PvP"),
                 (f.refresh, "Refresh"),
-            ].iter().filter(|(on, _)| *on).map(|(_, s)| *s).collect();
+            ]
+            .iter()
+            .filter(|(on, _)| *on)
+            .map(|(_, s)| *s)
+            .collect();
 
             if !flags.is_empty() {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Flags").size(10.5).color(theme::TEXT_MUTED));
+                    ui.label(
+                        egui::RichText::new("Flags")
+                            .size(10.5)
+                            .color(theme::TEXT_MUTED),
+                    );
                     ui.label(
                         egui::RichText::new(flags.join(", "))
                             .size(10.5)
@@ -159,9 +199,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
 
             if let Some(hid) = tile.house_id {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("House").size(10.5).color(theme::TEXT_MUTED));
+                    ui.label(
+                        egui::RichText::new("House")
+                            .size(10.5)
+                            .color(theme::TEXT_MUTED),
+                    );
                     // Look up house name from map
-                    let name = state.map_data.as_ref()
+                    let name = state
+                        .map_data
+                        .as_ref()
                         .and_then(|m| m.houses.iter().find(|h| h.id == hid))
                         .map(|h| h.name.as_str())
                         .unwrap_or("(unknown)");
@@ -172,7 +218,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> PropertiesAction {
                     )
                     .fill(Color32::TRANSPARENT)
                     .min_size(egui::vec2(0.0, 16.0));
-                    if ui.add(btn).on_hover_text("Click to select as house brush").clicked() {
+                    if ui
+                        .add(btn)
+                        .on_hover_text("Click to select as house brush")
+                        .clicked()
+                    {
                         state.active_house_id = Some(hid);
                     }
                 });

@@ -10,7 +10,11 @@ const MAGENTA: [u8; 3] = [0xFF, 0x00, 0xFF];
 
 /// Decode raw BMP bytes into RGBA pixel data.
 /// Returns a Vec<u8> of length width * height * 4.
-pub fn decode_bmp_to_rgba(bmp_data: &[u8], expected_width: u32, expected_height: u32) -> Result<Vec<u8>> {
+pub fn decode_bmp_to_rgba(
+    bmp_data: &[u8],
+    expected_width: u32,
+    expected_height: u32,
+) -> Result<Vec<u8>> {
     // Use the `image` crate for robust BMP parsing.
     match image::load_from_memory_with_format(bmp_data, image::ImageFormat::Bmp) {
         Ok(img) => {
@@ -109,7 +113,11 @@ pub fn encode_rgba_to_bmp(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8
 
     let expected = (width * height * 4) as usize;
     if rgba.len() != expected {
-        bail!("RGBA data size mismatch: got {}, expected {}", rgba.len(), expected);
+        bail!(
+            "RGBA data size mismatch: got {}, expected {}",
+            rgba.len(),
+            expected
+        );
     }
 
     // Build image, converting transparent → magenta
@@ -172,8 +180,7 @@ mod tests {
             return;
         }
 
-        let catalog_json =
-            std::fs::read_to_string(asset_dir.join("catalog-content.json")).unwrap();
+        let catalog_json = std::fs::read_to_string(asset_dir.join("catalog-content.json")).unwrap();
         let catalog = crate::catalog::parse_catalog(&catalog_json).unwrap();
         let info = &catalog.sprite_sheets[0];
 

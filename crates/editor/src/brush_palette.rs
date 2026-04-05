@@ -1,9 +1,9 @@
 //! Brush palette panel — sidebar for selecting brushes by type/category.
 
-use egui::Color32;
 use crate::brushes::BrushType;
 use crate::state::EditorState;
 use crate::theme;
+use egui::Color32;
 
 const BRUSH_TABS: &[BrushType] = &[
     BrushType::Ground,
@@ -40,15 +40,21 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
         ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
         for &bt in BRUSH_TABS {
             let count = state.brush_registry.brushes_of_type(bt).len();
-            if count == 0 { continue; }
+            if count == 0 {
+                continue;
+            }
             let selected = state.brush_palette_filter == Some(bt);
             let text = format!("{} {}", bt.label(), count);
-            let btn = egui::Button::new(
-                egui::RichText::new(&text)
-                    .size(10.0)
-                    .color(if selected { Color32::WHITE } else { theme::TEXT_SECONDARY }),
-            )
-            .fill(if selected { theme::ACCENT } else { theme::BG_RAISED })
+            let btn = egui::Button::new(egui::RichText::new(&text).size(10.0).color(if selected {
+                Color32::WHITE
+            } else {
+                theme::TEXT_SECONDARY
+            }))
+            .fill(if selected {
+                theme::ACCENT
+            } else {
+                theme::BG_RAISED
+            })
             .corner_radius(egui::CornerRadius::same(3))
             .min_size(egui::vec2(0.0, 20.0));
             if ui.add(btn).clicked() {
@@ -82,26 +88,41 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     // Sprite preview
                     let preview_size = egui::vec2(22.0, 22.0);
                     let (rect, _) = ui.allocate_exact_size(preview_size, egui::Sense::hover());
-                    if let Some(tex) = crate::viewport::get_or_upload(&mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), look as u32) {
+                    if let Some(tex) = crate::viewport::get_or_upload(
+                        &mut state.sprite_textures,
+                        &state.sprite_sheets,
+                        ui.ctx(),
+                        look as u32,
+                    ) {
                         ui.painter().image(
-                            tex.id(), rect,
+                            tex.id(),
+                            rect,
                             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
                             Color32::WHITE,
                         );
                     } else {
                         let hue = (look as f32 * 137.508) % 360.0;
                         let c = Color32::from_rgb(
-                            (((hue / 360.0) * 200.0) as u8).wrapping_add(55), 80, 120,
+                            (((hue / 360.0) * 200.0) as u8).wrapping_add(55),
+                            80,
+                            120,
                         );
                         ui.painter().rect_filled(rect, 2.0, c);
                     }
 
-                    let text_color = if is_active { Color32::WHITE } else { theme::TEXT_PRIMARY };
-                    let btn = egui::Button::new(
-                        egui::RichText::new(&name).size(11.0).color(text_color),
-                    )
-                    .fill(if is_active { theme::ACCENT } else { Color32::TRANSPARENT })
-                    .corner_radius(egui::CornerRadius::same(2));
+                    let text_color = if is_active {
+                        Color32::WHITE
+                    } else {
+                        theme::TEXT_PRIMARY
+                    };
+                    let btn =
+                        egui::Button::new(egui::RichText::new(&name).size(11.0).color(text_color))
+                            .fill(if is_active {
+                                theme::ACCENT
+                            } else {
+                                Color32::TRANSPARENT
+                            })
+                            .corner_radius(egui::CornerRadius::same(2));
 
                     if ui.add(btn).clicked() {
                         if is_active {
@@ -133,18 +154,28 @@ fn show_tilesets(ui: &mut egui::Ui, state: &mut EditorState) {
                             for &brush_id in &palette.brushes {
                                 if let Some(brush) = state.brush_registry.get(brush_id) {
                                     if let Some(f) = filter {
-                                        if brush.brush_type() != f { continue; }
+                                        if brush.brush_type() != f {
+                                            continue;
+                                        }
                                     }
 
                                     let is_active = state.active_brush == Some(brush_id);
                                     let name = brush.name().to_string();
                                     let look = brush.look_id();
 
-                                    let text_color = if is_active { Color32::WHITE } else { theme::TEXT_PRIMARY };
+                                    let text_color = if is_active {
+                                        Color32::WHITE
+                                    } else {
+                                        theme::TEXT_PRIMARY
+                                    };
                                     let btn = egui::Button::new(
                                         egui::RichText::new(&name).size(11.0).color(text_color),
                                     )
-                                    .fill(if is_active { theme::ACCENT } else { Color32::TRANSPARENT });
+                                    .fill(if is_active {
+                                        theme::ACCENT
+                                    } else {
+                                        Color32::TRANSPARENT
+                                    });
 
                                     if ui.add(btn).clicked() {
                                         if is_active {

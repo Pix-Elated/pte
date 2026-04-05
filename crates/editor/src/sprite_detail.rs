@@ -102,19 +102,25 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
             };
             let anim_time_ms = (ui.ctx().input(|i| i.time) * 1000.0) as u64;
             let sprite_id = resolve_appearance_sprite(
-                &appearance, direction, state.animate_sprites, anim_time_ms,
+                &appearance,
+                direction,
+                state.animate_sprites,
+                anim_time_ms,
             );
 
-            let (preview_rect, _) = ui.allocate_exact_size(
-                Vec2::splat(PREVIEW_SIZE),
-                egui::Sense::hover(),
-            );
+            let (preview_rect, _) =
+                ui.allocate_exact_size(Vec2::splat(PREVIEW_SIZE), egui::Sense::hover());
 
             // Checkerboard background for transparency
             draw_checkerboard(ui.painter(), preview_rect, 8.0);
 
             if let Some(sid) = sprite_id {
-                if let Some(tex) = crate::viewport::get_or_upload(&mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), sid) {
+                if let Some(tex) = crate::viewport::get_or_upload(
+                    &mut state.sprite_textures,
+                    &state.sprite_sheets,
+                    ui.ctx(),
+                    sid,
+                ) {
                     ui.painter().image(
                         tex.id(),
                         preview_rect,
@@ -146,10 +152,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
                     }
 
                     if let Some(ref sf) = fg.sprite_info {
-                        let sprites_per_row =
-                            ((ui.available_width() + 2.0) / (FRAME_THUMB_SIZE + 2.0))
-                                .floor()
-                                .max(1.0) as usize;
+                        let sprites_per_row = ((ui.available_width() + 2.0)
+                            / (FRAME_THUMB_SIZE + 2.0))
+                            .floor()
+                            .max(1.0) as usize;
 
                         let sprite_ids: Vec<u32> = sf.sprite_id.to_vec();
 
@@ -173,12 +179,26 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
                                 } else {
                                     theme::BG_SURFACE
                                 };
-                                let border = if is_current { theme::ACCENT } else { theme::BORDER };
+                                let border = if is_current {
+                                    theme::ACCENT
+                                } else {
+                                    theme::BORDER
+                                };
 
                                 ui.painter().rect_filled(rect, 3.0, bg);
-                                ui.painter().rect_stroke(rect, 3.0, (0.5, border), egui::StrokeKind::Outside);
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    3.0,
+                                    (0.5, border),
+                                    egui::StrokeKind::Outside,
+                                );
 
-                                if let Some(tex) = crate::viewport::get_or_upload(&mut state.sprite_textures, &state.sprite_sheets, ui.ctx(), sid) {
+                                if let Some(tex) = crate::viewport::get_or_upload(
+                                    &mut state.sprite_textures,
+                                    &state.sprite_sheets,
+                                    ui.ctx(),
+                                    sid,
+                                ) {
                                     let inner = rect.shrink(2.0);
                                     ui.painter().image(
                                         tex.id(),
@@ -215,7 +235,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
 
                         // Animation info
                         if let Some(ref anim) = sf.animation {
-                            let loop_label = if anim.default_start_phase.is_some() { "loop" } else { "once" };
+                            let loop_label = if anim.default_start_phase.is_some() {
+                                "loop"
+                            } else {
+                                "once"
+                            };
                             let phase_count = anim.sprite_phase.len();
                             ui.label(
                                 egui::RichText::new(format!(
@@ -326,7 +350,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
                 }
                 if let Some(ref light) = flags.light {
                     if let Some(brightness) = light.brightness {
-                        prop_row(ui, "Light", &format!("brightness={} color={}", brightness, light.color.unwrap_or(0)));
+                        prop_row(
+                            ui,
+                            "Light",
+                            &format!(
+                                "brightness={} color={}",
+                                brightness,
+                                light.color.unwrap_or(0)
+                            ),
+                        );
                     }
                 }
                 if let Some(ref automap) = flags.automap {
@@ -383,15 +415,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
                     action = DetailAction::NewBlank;
                 }
 
-                let del_btn = egui::Button::new(
-                    egui::RichText::new("Delete")
-                        .size(11.0)
-                        .color(theme::ERROR),
-                )
-                .fill(theme::BG_SURFACE)
-                .stroke(egui::Stroke::new(0.5, theme::ERROR))
-                .corner_radius(egui::CornerRadius::same(3))
-                .min_size(egui::vec2(half, 24.0));
+                let del_btn =
+                    egui::Button::new(egui::RichText::new("Delete").size(11.0).color(theme::ERROR))
+                        .fill(theme::BG_SURFACE)
+                        .stroke(egui::Stroke::new(0.5, theme::ERROR))
+                        .corner_radius(egui::CornerRadius::same(3))
+                        .min_size(egui::vec2(half, 24.0));
                 if ui.add(del_btn).clicked() {
                     action = DetailAction::Delete;
                 }
@@ -428,11 +457,7 @@ fn action_btn(ui: &mut egui::Ui, label: &str, width: f32) -> egui::Response {
 
 fn prop_row(ui: &mut egui::Ui, key: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(key)
-                .size(10.0)
-                .color(theme::TEXT_MUTED),
-        );
+        ui.label(egui::RichText::new(key).size(10.0).color(theme::TEXT_MUTED));
         ui.label(
             egui::RichText::new(value)
                 .size(10.0)
@@ -453,11 +478,9 @@ fn draw_checkerboard(painter: &egui::Painter, rect: egui::Rect, cell_size: f32) 
             let color = if (row + col) % 2 == 0 { c1 } else { c2 };
             let x = rect.min.x + col as f32 * cell_size;
             let y = rect.min.y + row as f32 * cell_size;
-            let cell_rect = egui::Rect::from_min_size(
-                egui::pos2(x, y),
-                egui::vec2(cell_size, cell_size),
-            )
-            .intersect(rect);
+            let cell_rect =
+                egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(cell_size, cell_size))
+                    .intersect(rect);
             painter.rect_filled(cell_rect, 0.0, color);
         }
     }

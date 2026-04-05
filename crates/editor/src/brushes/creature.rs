@@ -4,9 +4,9 @@
 //! These brushes write to the spawns Vec on EditorState (via pending actions)
 //! and also ensure the tile exists so the map includes the position.
 
-use pte_otbm::MapData;
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// A creature definition.
 #[derive(Debug, Clone)]
@@ -34,11 +34,21 @@ impl CreatureBrush {
 }
 
 impl Brush for CreatureBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.creature.name }
-    fn brush_type(&self) -> BrushType { BrushType::Creature }
-    fn look_id(&self) -> u16 { self.creature.look_id }
-    fn can_drag(&self) -> bool { false }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.creature.name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Creature
+    }
+    fn look_id(&self) -> u16 {
+        self.creature.look_id
+    }
+    fn can_drag(&self) -> bool {
+        false
+    }
 
     fn draw(&self, map: &mut MapData, positions: &[(u16, u16, u8)]) -> BrushStroke {
         let mut tiles_before = Vec::new();
@@ -53,7 +63,10 @@ impl Brush for CreatureBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             // Signal that spawn data should be updated for these positions
             dirty_positions: positions.to_vec(),
         }
@@ -71,7 +84,10 @@ impl Brush for CreatureBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: positions.to_vec(),
         }
     }
@@ -94,11 +110,21 @@ impl SpawnBrush {
 }
 
 impl Brush for SpawnBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { "Spawn" }
-    fn brush_type(&self) -> BrushType { BrushType::Spawn }
-    fn look_id(&self) -> u16 { 0 }
-    fn can_drag(&self) -> bool { false }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        "Spawn"
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Spawn
+    }
+    fn look_id(&self) -> u16 {
+        0
+    }
+    fn can_drag(&self) -> bool {
+        false
+    }
 
     fn draw(&self, map: &mut MapData, positions: &[(u16, u16, u8)]) -> BrushStroke {
         let mut tiles_before = Vec::new();
@@ -112,7 +138,10 @@ impl Brush for SpawnBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: positions.to_vec(),
         }
     }
@@ -128,7 +157,10 @@ impl Brush for SpawnBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: positions.to_vec(),
         }
     }
@@ -151,11 +183,21 @@ impl WaypointBrush {
 }
 
 impl Brush for WaypointBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.waypoint_name }
-    fn brush_type(&self) -> BrushType { BrushType::Waypoint }
-    fn look_id(&self) -> u16 { 0 }
-    fn can_drag(&self) -> bool { false }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.waypoint_name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Waypoint
+    }
+    fn look_id(&self) -> u16 {
+        0
+    }
+    fn can_drag(&self) -> bool {
+        false
+    }
 
     fn draw(&self, map: &mut MapData, positions: &[(u16, u16, u8)]) -> BrushStroke {
         let mut tiles_before = Vec::new();
@@ -178,7 +220,10 @@ impl Brush for WaypointBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }
@@ -198,7 +243,10 @@ impl Brush for WaypointBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }

@@ -19,62 +19,90 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    section(ui, "Tools", &[
-                        ("B", "Brush"),
-                        ("E", "Eraser"),
-                        ("G", "Fill (Bucket)"),
-                        ("S", "Select"),
-                        ("I", "Eyedropper"),
-                        ("D", "Door brush"),
-                        ("C", "Creature brush"),
-                        ("N", "Spawn brush"),
-                        ("W", "Waypoint brush"),
-                    ]);
+                    section(
+                        ui,
+                        "Tools",
+                        &[
+                            ("B", "Brush"),
+                            ("E", "Eraser"),
+                            ("G", "Fill (Bucket)"),
+                            ("S", "Select"),
+                            ("I", "Eyedropper"),
+                            ("D", "Door brush"),
+                            ("C", "Creature brush"),
+                            ("N", "Spawn brush"),
+                            ("W", "Waypoint brush"),
+                        ],
+                    );
 
-                    section(ui, "File", &[
-                        ("Ctrl+O", "Open map"),
-                        ("Ctrl+S", "Save map"),
-                        ("Ctrl+Shift+S", "Save as…"),
-                    ]);
+                    section(
+                        ui,
+                        "File",
+                        &[
+                            ("Ctrl+O", "Open map"),
+                            ("Ctrl+S", "Save map"),
+                            ("Ctrl+Shift+S", "Save as…"),
+                        ],
+                    );
 
-                    section(ui, "Edit", &[
-                        ("Ctrl+Z", "Undo"),
-                        ("Ctrl+Y", "Redo"),
-                        ("Ctrl+C", "Copy selection"),
-                        ("Ctrl+X", "Cut selection"),
-                        ("Ctrl+V", "Paste (ghost mode)"),
-                        ("Delete", "Delete selection"),
-                    ]);
+                    section(
+                        ui,
+                        "Edit",
+                        &[
+                            ("Ctrl+Z", "Undo"),
+                            ("Ctrl+Y", "Redo"),
+                            ("Ctrl+C", "Copy selection"),
+                            ("Ctrl+X", "Cut selection"),
+                            ("Ctrl+V", "Paste (ghost mode)"),
+                            ("Delete", "Delete selection"),
+                        ],
+                    );
 
-                    section(ui, "Navigation", &[
-                        ("Ctrl+G", "Go to position"),
-                        ("Ctrl+F", "Find/Replace items"),
-                        ("Alt+←", "Navigate back"),
-                        ("Alt+→", "Navigate forward"),
-                        ("PageUp", "Z-level up"),
-                        ("PageDown", "Z-level down"),
-                        ("M", "Toggle minimap"),
-                    ]);
+                    section(
+                        ui,
+                        "Navigation",
+                        &[
+                            ("Ctrl+G", "Go to position"),
+                            ("Ctrl+F", "Find/Replace items"),
+                            ("Alt+←", "Navigate back"),
+                            ("Alt+→", "Navigate forward"),
+                            ("PageUp", "Z-level up"),
+                            ("PageDown", "Z-level down"),
+                            ("M", "Toggle minimap"),
+                        ],
+                    );
 
-                    section(ui, "View", &[
-                        ("Ctrl+H", "Toggle house palette"),
-                        ("Ctrl+P", "Toggle item properties"),
-                        ("?", "This shortcuts panel"),
-                        ("Scroll", "Zoom in/out"),
-                        ("Middle-drag", "Pan camera"),
-                        ("Ctrl+drag", "Pan camera (alt)"),
-                    ]);
+                    section(
+                        ui,
+                        "View",
+                        &[
+                            ("Ctrl+H", "Toggle house palette"),
+                            ("Ctrl+P", "Toggle item properties"),
+                            ("?", "This shortcuts panel"),
+                            ("Scroll", "Zoom in/out"),
+                            ("Middle-drag", "Pan camera"),
+                            ("Ctrl+drag", "Pan camera (alt)"),
+                        ],
+                    );
 
-                    section(ui, "Hotkeys", &[
-                        ("F1-F10", "Recall hotkey slot"),
-                        ("Shift+F1-F10", "Save hotkey slot"),
-                    ]);
+                    section(
+                        ui,
+                        "Hotkeys",
+                        &[
+                            ("F1-F10", "Recall hotkey slot"),
+                            ("Shift+F1-F10", "Save hotkey slot"),
+                        ],
+                    );
 
-                    section(ui, "Selection", &[
-                        ("Ctrl+A", "Select all (z-level)"),
-                        ("Escape", "Deselect / cancel paste"),
-                        ("Arrow keys", "Nudge selection"),
-                    ]);
+                    section(
+                        ui,
+                        "Selection",
+                        &[
+                            ("Ctrl+A", "Select all (z-level)"),
+                            ("Escape", "Deselect / cancel paste"),
+                            ("Arrow keys", "Nudge selection"),
+                        ],
+                    );
                 });
         });
 

@@ -88,7 +88,8 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
 
         if name_lower == "catalog-content.json" {
             let dir = path.parent().unwrap_or(path).to_path_buf();
-            let version = dir.file_name()
+            let version = dir
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
@@ -104,21 +105,24 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
         } else if name_lower.ends_with(".otbm") && size > 0 {
             // Track directories that contain .otbm files — these are world dirs
             if let Some(parent) = path.parent() {
-                let world_candidate = if parent.file_name().and_then(|n| n.to_str()) == Some("world") {
-                    parent.to_path_buf()
-                } else {
-                    // Walk up to find the nearest ancestor named "world"
-                    let mut p = parent;
-                    loop {
-                        if p.file_name().and_then(|n| n.to_str()) == Some("world") {
-                            break p.to_path_buf();
+                let world_candidate =
+                    if parent.file_name().and_then(|n| n.to_str()) == Some("world") {
+                        parent.to_path_buf()
+                    } else {
+                        // Walk up to find the nearest ancestor named "world"
+                        let mut p = parent;
+                        loop {
+                            if p.file_name().and_then(|n| n.to_str()) == Some("world") {
+                                break p.to_path_buf();
+                            }
+                            match p.parent() {
+                                Some(pp) if pp != root => p = pp,
+                                _ => {
+                                    break parent.to_path_buf();
+                                }
+                            }
                         }
-                        match p.parent() {
-                            Some(pp) if pp != root => p = pp,
-                            _ => { break parent.to_path_buf(); }
-                        }
-                    }
-                };
+                    };
                 if !world_dirs.contains(&world_candidate) {
                     world_dirs.push(world_candidate);
                 }
@@ -128,7 +132,9 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
 
     tracing::info!(
         "Phase 1 complete: {} catalog(s), {} config(s), {} world dir(s)",
-        catalogs.len(), config_map_names.len(), world_dirs.len(),
+        catalogs.len(),
+        config_map_names.len(),
+        world_dirs.len(),
     );
     for wd in &world_dirs {
         tracing::info!("  discovered world dir: {}", wd.display());
@@ -188,7 +194,10 @@ fn build_project(
     // then fall back to walking up from the catalog dir
     let world_dir = find_world_dir(catalog_dir, config_map_names, discovered_world_dirs);
     let Some(world_dir) = world_dir else {
-        tracing::warn!("build_project: no world/ dir found for catalog {}", catalog_dir.display());
+        tracing::warn!(
+            "build_project: no world/ dir found for catalog {}",
+            catalog_dir.display()
+        );
         return project;
     };
     tracing::info!("build_project: using world dir {}", world_dir.display());
@@ -284,7 +293,8 @@ fn find_world_dir(
             if depth >= 1 {
                 tracing::info!(
                     "find_world_dir: using pre-discovered world dir {} (common depth {})",
-                    wd.display(), depth,
+                    wd.display(),
+                    depth,
                 );
                 return Some(wd.clone());
             }
@@ -294,11 +304,18 @@ fn find_world_dir(
     // Strategy 2: Walk up from catalog dir
     let mut search = catalog_dir.to_path_buf();
     for level in 0..8 {
-        tracing::debug!("find_world_dir: level {} checking {}", level, search.display());
+        tracing::debug!(
+            "find_world_dir: level {} checking {}",
+            level,
+            search.display()
+        );
         // Check if current dir has a world/ subfolder
         let candidate = search.join("world");
         if candidate.is_dir() {
-            tracing::info!("find_world_dir: found direct world/ at {}", candidate.display());
+            tracing::info!(
+                "find_world_dir: found direct world/ at {}",
+                candidate.display()
+            );
             return Some(candidate);
         }
 
@@ -324,9 +341,16 @@ fn find_world_dir(
                                 let sub_name = sub.file_name().to_string_lossy().to_string();
                                 if sub_name.starts_with("data-") || sub_name == "data" {
                                     let world = sub.path().join("world");
-                                    tracing::debug!("find_world_dir: grandchild check {} -> exists={}", world.display(), world.is_dir());
+                                    tracing::debug!(
+                                        "find_world_dir: grandchild check {} -> exists={}",
+                                        world.display(),
+                                        world.is_dir()
+                                    );
                                     if world.is_dir() {
-                                        tracing::info!("find_world_dir: found grandchild world/ at {}", world.display());
+                                        tracing::info!(
+                                            "find_world_dir: found grandchild world/ at {}",
+                                            world.display()
+                                        );
                                         return Some(world);
                                     }
                                 }
@@ -369,7 +393,10 @@ fn common_ancestor_depth(a: &Path, b: &Path) -> usize {
 }
 
 /// Find the mapName from the nearest config.lua to a given world/ dir.
-fn find_map_name_for_world(world_dir: &Path, config_map_names: &BTreeMap<PathBuf, String>) -> Option<String> {
+fn find_map_name_for_world(
+    world_dir: &Path,
+    config_map_names: &BTreeMap<PathBuf, String>,
+) -> Option<String> {
     // Walk up from world dir's parent, looking for a config.lua
     let mut search = world_dir.parent()?.to_path_buf();
     for _ in 0..5 {
@@ -421,11 +448,24 @@ fn find_files_recursive(
     // Skip directories that never contain OT assets
     if matches!(
         dir_name,
-        ".git" | ".github" | ".svn" | ".claude" | ".vscode"
-            | "node_modules" | "target" | "__pycache__"
-            | "build" | "build-static" | "cmake"
-            | "Release" | "RelWithDebInfo" | "Debug" | "MinSizeRel"
-            | "vcproj" | "docker" | "metrics"
+        ".git"
+            | ".github"
+            | ".svn"
+            | ".claude"
+            | ".vscode"
+            | "node_modules"
+            | "target"
+            | "__pycache__"
+            | "build"
+            | "build-static"
+            | "cmake"
+            | "Release"
+            | "RelWithDebInfo"
+            | "Debug"
+            | "MinSizeRel"
+            | "vcproj"
+            | "docker"
+            | "metrics"
     ) {
         return;
     }
@@ -443,7 +483,10 @@ fn find_files_recursive(
             .map(|entries| {
                 entries.flatten().any(|e| {
                     let n = e.file_name().to_string_lossy().to_lowercase();
-                    n.ends_with(".cpp") || n.ends_with(".h") || n.ends_with(".cc") || n.ends_with(".cxx")
+                    n.ends_with(".cpp")
+                        || n.ends_with(".h")
+                        || n.ends_with(".cc")
+                        || n.ends_with(".cxx")
                 })
             })
             .unwrap_or(false);
@@ -607,7 +650,10 @@ pub fn show(ctx: &egui::Context, scanner: &mut ScannerState) -> ScannerAction {
             };
 
             if result.is_empty() {
-                ui.colored_label(theme::WARNING, "No catalog-content.json files found in this directory tree.");
+                ui.colored_label(
+                    theme::WARNING,
+                    "No catalog-content.json files found in this directory tree.",
+                );
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new("Make sure the folder contains client asset files.")
@@ -630,7 +676,13 @@ pub fn show(ctx: &egui::Context, scanner: &mut ScannerState) -> ScannerAction {
                 .show(ui, |ui| {
                     for (idx, project) in result.projects.iter().enumerate() {
                         let expanded = scanner.expanded_project == Some(idx);
-                        if let Some(act) = show_project_card(ui, project, idx, expanded, &mut scanner.expanded_project) {
+                        if let Some(act) = show_project_card(
+                            ui,
+                            project,
+                            idx,
+                            expanded,
+                            &mut scanner.expanded_project,
+                        ) {
                             pending_action = Some(act);
                         }
                         ui.add_space(6.0);
@@ -653,14 +705,22 @@ fn show_project_card(
     expanded_state: &mut Option<usize>,
 ) -> Option<ScannerAction> {
     let mut action = None;
-    let frame_bg = if expanded { theme::BG_RAISED } else { theme::BG_SURFACE };
+    let frame_bg = if expanded {
+        theme::BG_RAISED
+    } else {
+        theme::BG_SURFACE
+    };
 
     egui::Frame::NONE
         .fill(frame_bg)
         .corner_radius(egui::CornerRadius::same(6))
         .stroke(egui::Stroke::new(
             if expanded { 1.0 } else { 0.5 },
-            if expanded { theme::ACCENT } else { theme::BORDER },
+            if expanded {
+                theme::ACCENT
+            } else {
+                theme::BORDER
+            },
         ))
         .inner_margin(12.0)
         .show(ui, |ui| {
@@ -670,7 +730,9 @@ fn show_project_card(
             ui.horizontal(|ui| {
                 // Version badge
                 let badge_text = format!("v{}", project.version);
-                let badge_rect = ui.allocate_exact_size(egui::vec2(56.0, 22.0), egui::Sense::hover()).0;
+                let badge_rect = ui
+                    .allocate_exact_size(egui::vec2(56.0, 22.0), egui::Sense::hover())
+                    .0;
                 ui.painter().rect_filled(badge_rect, 4.0, theme::ACCENT);
                 ui.painter().text(
                     badge_rect.center(),
@@ -685,7 +747,9 @@ fn show_project_card(
                 // Info column
                 ui.vertical(|ui| {
                     // Catalog location
-                    let rel_path = project.catalog_dir.file_name()
+                    let rel_path = project
+                        .catalog_dir
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("?");
                     ui.label(
@@ -697,7 +761,11 @@ fn show_project_card(
                     // Map summary
                     let map_count = project.total_map_count();
                     let map_label = if let Some(ref main) = project.main_map {
-                        let stem = main.path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+                        let stem = main
+                            .path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("?");
                         format!(
                             "🗺 {} ({}) + {} overlay(s)",
                             stem,
@@ -718,12 +786,18 @@ fn show_project_card(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Open button (only if there's a main map)
                     let can_open = project.main_map.is_some();
-                    let btn = egui::Button::new(
-                        egui::RichText::new("Open")
-                            .size(12.0)
-                            .color(if can_open { Color32::WHITE } else { theme::TEXT_MUTED }),
-                    )
-                    .fill(if can_open { theme::ACCENT } else { theme::BG_RAISED })
+                    let btn = egui::Button::new(egui::RichText::new("Open").size(12.0).color(
+                        if can_open {
+                            Color32::WHITE
+                        } else {
+                            theme::TEXT_MUTED
+                        },
+                    ))
+                    .fill(if can_open {
+                        theme::ACCENT
+                    } else {
+                        theme::BG_RAISED
+                    })
                     .corner_radius(egui::CornerRadius::same(4))
                     .min_size(egui::vec2(64.0, 26.0));
 
@@ -732,14 +806,22 @@ fn show_project_card(
                             action = Some(ScannerAction::LoadProject {
                                 asset_dir: project.catalog_dir.clone(),
                                 main_map: main.path.clone(),
-                                custom_maps: project.custom_maps.iter().map(|m| m.path.clone()).collect(),
+                                custom_maps: project
+                                    .custom_maps
+                                    .iter()
+                                    .map(|m| m.path.clone())
+                                    .collect(),
                                 project: project.clone(),
                             });
                         }
                     }
 
                     // Expand toggle
-                    let toggle_text = if expanded { "▾ Details" } else { "▸ Details" };
+                    let toggle_text = if expanded {
+                        "▾ Details"
+                    } else {
+                        "▸ Details"
+                    };
                     if ui.small_button(toggle_text).clicked() {
                         if expanded {
                             *expanded_state = None;
@@ -756,53 +838,75 @@ fn show_project_card(
                 ui.separator();
                 ui.add_space(4.0);
 
-                let section = |ui: &mut egui::Ui, label: &str, maps: &[MapEntry], color: Color32| {
-                    if maps.is_empty() { return; }
-                    ui.horizontal(|ui| {
-                        ui.colored_label(color, "●");
-                        ui.label(
-                            egui::RichText::new(format!("{} ({})", label, maps.len()))
-                                .size(10.5)
-                                .color(theme::TEXT_SECONDARY)
-                                .strong(),
-                        );
-                    });
-                    for map in maps {
+                let section =
+                    |ui: &mut egui::Ui, label: &str, maps: &[MapEntry], color: Color32| {
+                        if maps.is_empty() {
+                            return;
+                        }
                         ui.horizontal(|ui| {
-                            ui.add_space(16.0);
+                            ui.colored_label(color, "●");
                             ui.label(
-                                egui::RichText::new(&map.label)
-                                    .size(10.0)
-                                    .color(theme::TEXT_MUTED)
-                                    .monospace(),
-                            );
-                            ui.label(
-                                egui::RichText::new(format_size(map.size))
-                                    .size(9.5)
-                                    .color(theme::TEXT_MUTED),
+                                egui::RichText::new(format!("{} ({})", label, maps.len()))
+                                    .size(10.5)
+                                    .color(theme::TEXT_SECONDARY)
+                                    .strong(),
                             );
                         });
-                    }
-                    ui.add_space(2.0);
-                };
+                        for map in maps {
+                            ui.horizontal(|ui| {
+                                ui.add_space(16.0);
+                                ui.label(
+                                    egui::RichText::new(&map.label)
+                                        .size(10.0)
+                                        .color(theme::TEXT_MUTED)
+                                        .monospace(),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format_size(map.size))
+                                        .size(9.5)
+                                        .color(theme::TEXT_MUTED),
+                                );
+                            });
+                        }
+                        ui.add_space(2.0);
+                    };
 
                 if let Some(ref main) = project.main_map {
                     ui.horizontal(|ui| {
                         ui.colored_label(theme::SUCCESS, "●");
                         ui.label(
-                            egui::RichText::new(format!("Main Map: {} ({})", main.label, format_size(main.size)))
-                                .size(10.5)
-                                .color(theme::TEXT_SECONDARY)
-                                .strong(),
+                            egui::RichText::new(format!(
+                                "Main Map: {} ({})",
+                                main.label,
+                                format_size(main.size)
+                            ))
+                            .size(10.5)
+                            .color(theme::TEXT_SECONDARY)
+                            .strong(),
                         );
                     });
                     ui.add_space(2.0);
                 }
 
                 section(ui, "Custom Overlays", &project.custom_maps, theme::ACCENT);
-                section(ui, "Quest Maps", &project.quest_maps, Color32::from_rgb(180, 140, 255));
-                section(ui, "World Changes", &project.world_change_maps, Color32::from_rgb(255, 180, 100));
-                section(ui, "Events", &project.event_maps, Color32::from_rgb(100, 200, 255));
+                section(
+                    ui,
+                    "Quest Maps",
+                    &project.quest_maps,
+                    Color32::from_rgb(180, 140, 255),
+                );
+                section(
+                    ui,
+                    "World Changes",
+                    &project.world_change_maps,
+                    Color32::from_rgb(255, 180, 100),
+                );
+                section(
+                    ui,
+                    "Events",
+                    &project.event_maps,
+                    Color32::from_rgb(100, 200, 255),
+                );
                 section(ui, "Other Maps", &project.other_maps, theme::TEXT_MUTED);
 
                 if project.config_map_name.is_some() {

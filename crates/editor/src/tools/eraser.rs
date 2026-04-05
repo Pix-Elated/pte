@@ -1,6 +1,6 @@
-use pte_otbm::MapData;
-use crate::brushes::shape::{BrushShape, brush_offsets, expand_positions};
+use crate::brushes::shape::{brush_offsets, expand_positions, BrushShape};
 use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// Erase the top item (or entire tile with shift), respecting brush shape.
 ///

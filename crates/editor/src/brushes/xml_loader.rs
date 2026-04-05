@@ -13,8 +13,8 @@ use tracing::{debug, warn};
 use super::border::AutoBorder;
 use super::carpet::{CarpetAlignment, CarpetBrush};
 use super::creature::{CreatureBrush, CreatureDef, SpawnBrush, WaypointBrush};
-use super::door::{DoorBrush, DoorItem, DoorOrientation, DoorVariant};
 use super::doodad::{Composite, CompositeEntry, DoodadBrush};
+use super::door::{DoorBrush, DoorItem, DoorOrientation, DoorVariant};
 use super::flag::{FlagBrush, ZoneFlag};
 use super::ground::GroundBrush;
 use super::raw::RawBrush;
@@ -60,10 +60,7 @@ pub fn load_materials_file(
 }
 
 /// Parse brushes from XML string.
-pub fn load_materials_xml(
-    xml: &str,
-    registry: &mut BrushRegistry,
-) -> Result<usize, anyhow::Error> {
+pub fn load_materials_xml(xml: &str, registry: &mut BrushRegistry) -> Result<usize, anyhow::Error> {
     let mut reader = Reader::from_str(xml);
     let mut count = 0;
     let mut buf = Vec::new();
@@ -320,7 +317,9 @@ fn parse_wall_brush(
                 let tag = e.name();
                 match tag.as_ref() {
                     b"wall" => {
-                        if let (Some(wall_type), Some(id)) = (attr_str(e, "type"), attr_u16(e, "id")) {
+                        if let (Some(wall_type), Some(id)) =
+                            (attr_str(e, "type"), attr_u16(e, "id"))
+                        {
                             let alignment = match wall_type.as_str() {
                                 "pole" => WallAlignment::Pole,
                                 "horizontal" => WallAlignment::Horizontal,
@@ -513,9 +512,7 @@ fn parse_doodad_brush(
                 let composite = parse_composite(reader, chance)?;
                 brush.add_composite(composite);
             }
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e))
-                if e.name().as_ref() == b"item" =>
-            {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) if e.name().as_ref() == b"item" => {
                 let (id, chance) = parse_item_attrs(e)?;
                 if let Some(id) = id {
                     brush.add_single_item(id, chance.unwrap_or(1));
@@ -534,10 +531,7 @@ fn parse_doodad_brush(
     Ok(Some(()))
 }
 
-fn parse_composite(
-    reader: &mut Reader<&[u8]>,
-    chance: u32,
-) -> Result<Composite, anyhow::Error> {
+fn parse_composite(reader: &mut Reader<&[u8]>, chance: u32) -> Result<Composite, anyhow::Error> {
     let mut entries = Vec::new();
     let mut buf = Vec::new();
 
@@ -566,9 +560,7 @@ fn parse_composite(
                             Ok(Event::End(ref ie)) if ie.name().as_ref() == b"tile" => break,
                             Ok(Event::Eof) => break,
                             Ok(_) => {}
-                            Err(e) => {
-                                return Err(anyhow::anyhow!("Composite tile error: {}", e))
-                            }
+                            Err(e) => return Err(anyhow::anyhow!("Composite tile error: {}", e)),
                         }
                         inner_buf.clear();
                     }
@@ -610,9 +602,7 @@ fn parse_tileset(
                     brushes: Vec::new(),
                 });
             }
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e))
-                if e.name().as_ref() == b"brush" =>
-            {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) if e.name().as_ref() == b"brush" => {
                 let bname = attr_str(e, "name");
                 if let (Some(palette), Some(bname)) = (&mut current_palette, bname) {
                     if let Some(brush) = registry.get_by_name(&bname) {
@@ -716,10 +706,7 @@ fn parse_creature_brush(
 
 // ── Spawn brush ──
 
-fn parse_spawn_brush(
-    attrs: &BrushAttrs,
-    registry: &mut BrushRegistry,
-) -> Option<()> {
+fn parse_spawn_brush(attrs: &BrushAttrs, registry: &mut BrushRegistry) -> Option<()> {
     let brush_id = registry.next_brush_id();
     let brush = SpawnBrush::new(brush_id);
     registry.register(Arc::new(brush));
@@ -729,10 +716,7 @@ fn parse_spawn_brush(
 
 // ── Waypoint brush ──
 
-fn parse_waypoint_brush(
-    attrs: &BrushAttrs,
-    registry: &mut BrushRegistry,
-) -> Option<()> {
+fn parse_waypoint_brush(attrs: &BrushAttrs, registry: &mut BrushRegistry) -> Option<()> {
     let name = attrs.name.clone().unwrap_or_else(|| "waypoint".to_string());
     let brush_id = registry.next_brush_id();
     let brush = WaypointBrush::new(brush_id, name);
@@ -742,10 +726,7 @@ fn parse_waypoint_brush(
 
 // ── Raw brush ──
 
-fn parse_raw_brush(
-    attrs: &BrushAttrs,
-    registry: &mut BrushRegistry,
-) -> Option<()> {
+fn parse_raw_brush(attrs: &BrushAttrs, registry: &mut BrushRegistry) -> Option<()> {
     let name = attrs.name.clone()?;
     let item_id = attrs.look_id?;
     let brush_id = registry.next_brush_id();
@@ -756,10 +737,7 @@ fn parse_raw_brush(
 
 // ── Flag brush ──
 
-fn parse_flag_brush(
-    attrs: &BrushAttrs,
-    registry: &mut BrushRegistry,
-) -> Option<()> {
+fn parse_flag_brush(attrs: &BrushAttrs, registry: &mut BrushRegistry) -> Option<()> {
     let flag_name = attrs.name.as_deref()?;
     let flag = match flag_name {
         "pvp" | "pvp_zone" => ZoneFlag::PvpZone,

@@ -103,7 +103,9 @@ pub fn start_update_check(state: &mut UpdaterState) {
 
 /// Poll for updates from the background thread. Call once per frame.
 pub fn poll(state: &mut UpdaterState) {
-    let Some(ref rx) = state.progress_rx else { return };
+    let Some(ref rx) = state.progress_rx else {
+        return;
+    };
 
     while let Ok(progress) = rx.try_recv() {
         match &progress {
@@ -186,7 +188,10 @@ pub fn blocking_check_and_update() -> bool {
         Err(_) => return false,
     };
 
-    let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
     let resp = match client.get(&url).send() {
         Ok(r) if r.status().is_success() => r,
         _ => return false,
@@ -237,11 +242,17 @@ fn update_worker(tx: mpsc::Sender<UpdateProgress>, download_rx: mpsc::Receiver<b
     };
 
     // Fetch latest release
-    let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
     let resp = match client.get(&url).send() {
         Ok(r) if r.status().is_success() => r,
         Ok(r) => {
-            let _ = tx.send(UpdateProgress::Error(format!("GitHub API: HTTP {}", r.status())));
+            let _ = tx.send(UpdateProgress::Error(format!(
+                "GitHub API: HTTP {}",
+                r.status()
+            )));
             return;
         }
         Err(e) => {
@@ -271,7 +282,10 @@ fn update_worker(tx: mpsc::Sender<UpdateProgress>, download_rx: mpsc::Receiver<b
     let remote = match semver::Version::parse(remote_ver_str) {
         Ok(v) => v,
         Err(_) => {
-            let _ = tx.send(UpdateProgress::Error(format!("Invalid remote version: {}", remote_ver_str)));
+            let _ = tx.send(UpdateProgress::Error(format!(
+                "Invalid remote version: {}",
+                remote_ver_str
+            )));
             return;
         }
     };
@@ -283,22 +297,23 @@ fn update_worker(tx: mpsc::Sender<UpdateProgress>, download_rx: mpsc::Receiver<b
 
     // Find the Windows x64 asset
     let assets = json["assets"].as_array();
-    let download_url = assets
-        .and_then(|a| {
-            a.iter().find_map(|asset| {
-                let name = asset["name"].as_str()?;
-                if name.contains("windows") && name.contains("x64") {
-                    asset["browser_download_url"].as_str().map(String::from)
-                } else {
-                    None
-                }
-            })
-        });
+    let download_url = assets.and_then(|a| {
+        a.iter().find_map(|asset| {
+            let name = asset["name"].as_str()?;
+            if name.contains("windows") && name.contains("x64") {
+                asset["browser_download_url"].as_str().map(String::from)
+            } else {
+                None
+            }
+        })
+    });
 
     let download_url = match download_url {
         Some(url) => url,
         None => {
-            let _ = tx.send(UpdateProgress::Error("No Windows x64 asset in release".into()));
+            let _ = tx.send(UpdateProgress::Error(
+                "No Windows x64 asset in release".into(),
+            ));
             return;
         }
     };
@@ -330,7 +345,10 @@ fn update_worker(tx: mpsc::Sender<UpdateProgress>, download_rx: mpsc::Receiver<b
     };
 
     let total = resp.content_length().unwrap_or(0);
-    let _ = tx.send(UpdateProgress::Downloading { downloaded: 0, total });
+    let _ = tx.send(UpdateProgress::Downloading {
+        downloaded: 0,
+        total,
+    });
 
     // Write to a temp file
     let temp_dir = std::env::temp_dir();
@@ -398,9 +416,12 @@ fn show_update_available(ctx: &egui::Context, state: &mut UpdaterState, info: &U
 
             if !info.published_at.is_empty() {
                 ui.label(
-                    egui::RichText::new(format!("Released: {}", &info.published_at[..10.min(info.published_at.len())]))
-                        .size(11.0)
-                        .color(egui::Color32::from_gray(150)),
+                    egui::RichText::new(format!(
+                        "Released: {}",
+                        &info.published_at[..10.min(info.published_at.len())]
+                    ))
+                    .size(11.0)
+                    .color(egui::Color32::from_gray(150)),
                 );
             }
 
@@ -446,8 +467,7 @@ fn show_download_progress(ctx: &egui::Context, downloaded: u64, total: u64) {
                 total as f64 / 1_048_576.0,
             ));
 
-            let bar = egui::ProgressBar::new(fraction)
-                .text(format!("{:.0}%", fraction * 100.0));
+            let bar = egui::ProgressBar::new(fraction).text(format!("{:.0}%", fraction * 100.0));
             ui.add(bar);
 
             ui.add_space(4.0);
@@ -507,10 +527,7 @@ fn show_error(ctx: &egui::Context, state: &mut UpdaterState, msg: &str) {
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
-            ui.label(
-                egui::RichText::new(msg)
-                    .color(crate::theme::ERROR),
-            );
+            ui.label(egui::RichText::new(msg).color(crate::theme::ERROR));
             ui.add_space(8.0);
             if ui.button("OK").clicked() {
                 state.show_ui = false;

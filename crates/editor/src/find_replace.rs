@@ -59,9 +59,12 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                             .desired_width(80.0)
                             .hint_text("e.g. 4527"),
                     );
-                    let can_replace = !state.find_results.is_empty()
-                        && !state.replace_item_id.is_empty();
-                    if ui.add_enabled(can_replace, egui::Button::new("Replace All")).clicked() {
+                    let can_replace =
+                        !state.find_results.is_empty() && !state.replace_item_id.is_empty();
+                    if ui
+                        .add_enabled(can_replace, egui::Button::new("Replace All"))
+                        .clicked()
+                    {
                         do_replace_all(state);
                     }
                 });
@@ -71,13 +74,21 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
 
             // Property filters (apply to both ID and name modes)
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Action ID:").size(10.0).color(theme::TEXT_MUTED));
+                ui.label(
+                    egui::RichText::new("Action ID:")
+                        .size(10.0)
+                        .color(theme::TEXT_MUTED),
+                );
                 ui.add(
                     egui::TextEdit::singleline(&mut state.find_action_id)
                         .desired_width(60.0)
                         .hint_text("any"),
                 );
-                ui.label(egui::RichText::new("Unique ID:").size(10.0).color(theme::TEXT_MUTED));
+                ui.label(
+                    egui::RichText::new("Unique ID:")
+                        .size(10.0)
+                        .color(theme::TEXT_MUTED),
+                );
                 ui.add(
                     egui::TextEdit::singleline(&mut state.find_unique_id)
                         .desired_width(60.0)
@@ -176,26 +187,40 @@ fn do_find(state: &mut EditorState) {
 
     let filter_aid: Option<u16> = state.find_action_id.trim().parse().ok();
     let filter_uid: Option<u16> = state.find_unique_id.trim().parse().ok();
-    let z_filter = if state.find_current_z_only { Some(state.camera.z_level) } else { None };
+    let z_filter = if state.find_current_z_only {
+        Some(state.camera.z_level)
+    } else {
+        None
+    };
 
-    let Some(ref map) = state.map_data else { return };
+    let Some(ref map) = state.map_data else {
+        return;
+    };
 
     // Search all chunks
     for chunk in map.chunks.values() {
         for tile in chunk.values() {
             // Z-level filter
             if let Some(z) = z_filter {
-                if tile.z != z { continue; }
+                if tile.z != z {
+                    continue;
+                }
             }
 
             let has_item = tile.ground == Some(item_id)
                 || tile.items.iter().any(|it| {
-                    if it.id != item_id { return false; }
+                    if it.id != item_id {
+                        return false;
+                    }
                     if let Some(aid) = filter_aid {
-                        if it.action_id != Some(aid) { return false; }
+                        if it.action_id != Some(aid) {
+                            return false;
+                        }
                     }
                     if let Some(uid) = filter_uid {
-                        if it.unique_id != Some(uid) { return false; }
+                        if it.unique_id != Some(uid) {
+                            return false;
+                        }
                     }
                     true
                 });
@@ -222,7 +247,9 @@ fn do_replace_all(state: &mut EditorState) {
         return;
     };
 
-    let Some(ref mut map) = state.map_data else { return };
+    let Some(ref mut map) = state.map_data else {
+        return;
+    };
 
     let mut before = Vec::new();
     let mut after = Vec::new();
@@ -231,7 +258,9 @@ fn do_replace_all(state: &mut EditorState) {
     let positions: Vec<_> = state.find_results.clone();
 
     for (x, y, z) in &positions {
-        let Some(tile) = map.get_tile(*x, *y, *z) else { continue };
+        let Some(tile) = map.get_tile(*x, *y, *z) else {
+            continue;
+        };
         let old = tile.clone();
 
         let mut new_tile = old.clone();
@@ -286,10 +315,18 @@ fn do_find_by_name(_ctx: &egui::Context, state: &mut EditorState) {
 
     let filter_aid: Option<u16> = state.find_action_id.trim().parse().ok();
     let filter_uid: Option<u16> = state.find_unique_id.trim().parse().ok();
-    let z_filter = if state.find_current_z_only { Some(state.camera.z_level) } else { None };
+    let z_filter = if state.find_current_z_only {
+        Some(state.camera.z_level)
+    } else {
+        None
+    };
 
-    let Some(ref appearances) = state.appearances else { return };
-    let Some(ref map) = state.map_data else { return };
+    let Some(ref appearances) = state.appearances else {
+        return;
+    };
+    let Some(ref map) = state.map_data else {
+        return;
+    };
 
     // Build a set of item IDs whose appearance name contains the query
     let matching_ids: std::collections::HashSet<u16> = appearances
@@ -300,9 +337,7 @@ fn do_find_by_name(_ctx: &egui::Context, state: &mut EditorState) {
                 .as_ref()
                 .map_or(false, |n| n.to_lowercase().contains(&query))
         })
-        .filter_map(|app| {
-            app.id.map(|id| id as u16)
-        })
+        .filter_map(|app| app.id.map(|id| id as u16))
         .collect();
 
     if matching_ids.is_empty() {
@@ -314,19 +349,25 @@ fn do_find_by_name(_ctx: &egui::Context, state: &mut EditorState) {
         for tile in chunk.values() {
             // Z-level filter
             if let Some(z) = z_filter {
-                if tile.z != z { continue; }
+                if tile.z != z {
+                    continue;
+                }
             }
 
-            let has_item = tile
-                .ground
-                .map_or(false, |g| matching_ids.contains(&g))
+            let has_item = tile.ground.map_or(false, |g| matching_ids.contains(&g))
                 || tile.items.iter().any(|it| {
-                    if !matching_ids.contains(&it.id) { return false; }
+                    if !matching_ids.contains(&it.id) {
+                        return false;
+                    }
                     if let Some(aid) = filter_aid {
-                        if it.action_id != Some(aid) { return false; }
+                        if it.action_id != Some(aid) {
+                            return false;
+                        }
                     }
                     if let Some(uid) = filter_uid {
-                        if it.unique_id != Some(uid) { return false; }
+                        if it.unique_id != Some(uid) {
+                            return false;
+                        }
                     }
                     true
                 });

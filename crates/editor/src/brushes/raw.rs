@@ -1,9 +1,9 @@
 //! RAW brush — direct item placement without auto-border logic.
 //! Equivalent to RME's RAW brush, or our original "simple brush".
 
-use pte_otbm::MapData;
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// Raw brush places a specific item ID as ground or on the item stack.
 #[allow(dead_code)]
@@ -26,11 +26,21 @@ impl RawBrush {
 }
 
 impl Brush for RawBrush {
-    fn id(&self) -> BrushId { self.id }
-    fn name(&self) -> &str { &self.name }
-    fn brush_type(&self) -> BrushType { BrushType::Raw }
-    fn look_id(&self) -> u16 { self.item_id }
-    fn is_ground(&self) -> bool { self.as_ground }
+    fn id(&self) -> BrushId {
+        self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Raw
+    }
+    fn look_id(&self) -> u16 {
+        self.item_id
+    }
+    fn is_ground(&self) -> bool {
+        self.as_ground
+    }
 
     fn draw(&self, map: &mut MapData, positions: &[(u16, u16, u8)]) -> BrushStroke {
         let mut tiles_before = Vec::new();
@@ -50,7 +60,10 @@ impl Brush for RawBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }
@@ -89,7 +102,10 @@ impl Brush for RawBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }

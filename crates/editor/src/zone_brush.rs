@@ -50,7 +50,9 @@ impl ZoneFlag {
 
 /// Apply a zone flag to a tile at (x, y, z). If `erase` is true, remove the flag instead.
 pub fn apply_zone(state: &mut EditorState, x: u16, y: u16, z: u8, flag: ZoneFlag, erase: bool) {
-    let Some(ref mut map) = state.map_data else { return };
+    let Some(ref mut map) = state.map_data else {
+        return;
+    };
 
     // Save tile before for undo
     let tile_before = map.get_tile(x, y, z).cloned();
@@ -75,8 +77,12 @@ pub fn apply_zone(state: &mut EditorState, x: u16, y: u16, z: u8, flag: ZoneFlag
 /// Check whether a tile has a specific zone flag set.
 #[allow(dead_code)]
 pub fn has_zone_flag(state: &EditorState, x: u16, y: u16, z: u8, flag: ZoneFlag) -> bool {
-    let Some(ref map) = state.map_data else { return false };
-    let Some(tile) = map.get_tile(x, y, z) else { return false };
+    let Some(ref map) = state.map_data else {
+        return false;
+    };
+    let Some(tile) = map.get_tile(x, y, z) else {
+        return false;
+    };
     match flag {
         ZoneFlag::ProtectionZone => tile.flags.protection_zone,
         ZoneFlag::NoPvp => tile.flags.no_pvp,

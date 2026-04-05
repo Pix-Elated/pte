@@ -3,9 +3,9 @@
 //! Like table brush but with 8-directional awareness: N, E, S, W edges,
 //! NW/NE/SW/SE corners, center tiles, and 4 diagonal pieces.
 
-use pte_otbm::MapData;
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// The 13 carpet alignment types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,12 +37,12 @@ impl CarpetAlignment {
     /// Bit layout: NW=0, N=1, NE=2, W=3, E=4, SW=5, S=6, SE=7
     pub fn from_neighbor_mask(mask: u8) -> Self {
         let nw = mask & 0x01 != 0;
-        let n  = mask & 0x02 != 0;
+        let n = mask & 0x02 != 0;
         let ne = mask & 0x04 != 0;
-        let w  = mask & 0x08 != 0;
-        let e  = mask & 0x10 != 0;
+        let w = mask & 0x08 != 0;
+        let e = mask & 0x10 != 0;
         let sw = mask & 0x20 != 0;
-        let s  = mask & 0x40 != 0;
+        let s = mask & 0x40 != 0;
         let se = mask & 0x80 != 0;
 
         // If all 8 neighbors → center/full
@@ -56,21 +56,43 @@ impl CarpetAlignment {
         }
 
         // Corner pieces: only 2 cardinal neighbors meeting at a corner
-        if n && w && !e && !s { return Self::SouthEast; } // NW corner of carpet → SE alignment
-        if n && e && !w && !s { return Self::SouthWest; }
-        if s && w && !e && !n { return Self::NorthEast; }
-        if s && e && !w && !n { return Self::NorthWest; }
+        if n && w && !e && !s {
+            return Self::SouthEast;
+        } // NW corner of carpet → SE alignment
+        if n && e && !w && !s {
+            return Self::SouthWest;
+        }
+        if s && w && !e && !n {
+            return Self::NorthEast;
+        }
+        if s && e && !w && !n {
+            return Self::NorthWest;
+        }
 
         // Edge pieces: cardinal but not opposite cardinal
-        if n && s && !e && !w { return Self::Vertical; }
-        if e && w && !n && !s { return Self::Horizontal; }
+        if n && s && !e && !w {
+            return Self::Vertical;
+        }
+        if e && w && !n && !s {
+            return Self::Horizontal;
+        }
 
         // 3-way edges
-        if n && e && s && w { return Self::Center; }
-        if n && !s { return Self::South; }    // Neighbor to north → this is south edge
-        if s && !n { return Self::North; }
-        if e && !w { return Self::West; }
-        if w && !e { return Self::East; }
+        if n && e && s && w {
+            return Self::Center;
+        }
+        if n && !s {
+            return Self::South;
+        } // Neighbor to north → this is south edge
+        if s && !n {
+            return Self::North;
+        }
+        if e && !w {
+            return Self::West;
+        }
+        if w && !e {
+            return Self::East;
+        }
 
         Self::Center
     }
@@ -110,11 +132,21 @@ impl CarpetBrush {
 }
 
 impl Brush for CarpetBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.brush_name }
-    fn brush_type(&self) -> BrushType { BrushType::Carpet }
-    fn look_id(&self) -> u16 { self.look_id }
-    fn needs_border_update(&self) -> bool { true }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.brush_name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Carpet
+    }
+    fn look_id(&self) -> u16 {
+        self.look_id
+    }
+    fn needs_border_update(&self) -> bool {
+        true
+    }
 
     fn all_item_ids(&self) -> Vec<u16> {
         self.collect_item_ids()
@@ -141,7 +173,9 @@ impl Brush for CarpetBrush {
             // 8 neighbors for carpet
             for dy in -1i32..=1 {
                 for dx in -1i32..=1 {
-                    if dx == 0 && dy == 0 { continue; }
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
                     let nx = x as i32 + dx;
                     let ny = y as i32 + dy;
                     if nx >= 0 && ny >= 0 && nx <= u16::MAX as i32 && ny <= u16::MAX as i32 {
@@ -155,7 +189,10 @@ impl Brush for CarpetBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }
@@ -183,7 +220,9 @@ impl Brush for CarpetBrush {
             dirty.push((x, y, z));
             for dy in -1i32..=1 {
                 for dx in -1i32..=1 {
-                    if dx == 0 && dy == 0 { continue; }
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
                     let nx = x as i32 + dx;
                     let ny = y as i32 + dy;
                     if nx >= 0 && ny >= 0 && nx <= u16::MAX as i32 && ny <= u16::MAX as i32 {
@@ -197,7 +236,10 @@ impl Brush for CarpetBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }

@@ -1,8 +1,8 @@
 //! Flag brush — paints zone flags (PZ, PvP, no-logout, etc.) onto tiles.
 
-use pte_otbm::{MapData, TileFlags};
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::{MapData, TileFlags};
 
 /// Zone flag types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,10 +58,18 @@ impl FlagBrush {
 }
 
 impl Brush for FlagBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { self.flag.label() }
-    fn brush_type(&self) -> BrushType { BrushType::Flag }
-    fn look_id(&self) -> u16 { 0 }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        self.flag.label()
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Flag
+    }
+    fn look_id(&self) -> u16 {
+        0
+    }
 
     fn draw(&self, map: &mut MapData, positions: &[(u16, u16, u8)]) -> BrushStroke {
         let mut tiles_before = Vec::new();
@@ -77,7 +85,10 @@ impl Brush for FlagBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }
@@ -96,7 +107,10 @@ impl Brush for FlagBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }

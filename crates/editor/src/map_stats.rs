@@ -151,8 +151,16 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
 }
 
 fn stat_row(ui: &mut egui::Ui, label: &str, value: &str) {
-    ui.label(egui::RichText::new(label).size(10.0).color(theme::TEXT_MUTED));
-    ui.label(egui::RichText::new(value).size(10.0).color(theme::TEXT_PRIMARY));
+    ui.label(
+        egui::RichText::new(label)
+            .size(10.0)
+            .color(theme::TEXT_MUTED),
+    );
+    ui.label(
+        egui::RichText::new(value)
+            .size(10.0)
+            .color(theme::TEXT_PRIMARY),
+    );
 }
 
 fn stat_row_ui(ui: &mut egui::Ui, label: &str, value: &str) {

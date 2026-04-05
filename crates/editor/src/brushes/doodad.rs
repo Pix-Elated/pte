@@ -3,10 +3,10 @@
 //! Doodads are decorative objects that span multiple tiles (e.g., a 2×2 fountain,
 //! a sand dune, tree patches). Each composite has weighted random variants.
 
-use rand::Rng;
-use pte_otbm::MapData;
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
+use rand::Rng;
 
 /// A single item placed at a relative offset within a composite.
 #[derive(Debug, Clone)]
@@ -109,12 +109,24 @@ impl DoodadBrush {
 }
 
 impl Brush for DoodadBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.brush_name }
-    fn brush_type(&self) -> BrushType { BrushType::Doodad }
-    fn look_id(&self) -> u16 { self.look_id }
-    fn can_drag(&self) -> bool { self.draggable }
-    fn needs_border_update(&self) -> bool { self.redo_borders }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.brush_name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Doodad
+    }
+    fn look_id(&self) -> u16 {
+        self.look_id
+    }
+    fn can_drag(&self) -> bool {
+        self.draggable
+    }
+    fn needs_border_update(&self) -> bool {
+        self.redo_borders
+    }
 
     fn all_item_ids(&self) -> Vec<u16> {
         let mut ids: Vec<u16> = self.single_items.iter().map(|&(id, _)| id).collect();
@@ -170,7 +182,10 @@ impl Brush for DoodadBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }
@@ -204,7 +219,10 @@ impl Brush for DoodadBrush {
         }
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: vec![],
         }
     }

@@ -1,9 +1,9 @@
-use pte_otbm::{MapData, MapItem};
-use pte_appearances::LoadedAppearances;
 use crate::brushes::registry::BrushRegistry;
-use crate::brushes::shape::{BrushShape, brush_offsets, expand_positions};
+use crate::brushes::shape::{brush_offsets, expand_positions, BrushShape};
 use crate::brushes::BrushId;
 use crate::state::UndoAction;
+use pte_appearances::LoadedAppearances;
+use pte_otbm::{MapData, MapItem};
 
 /// Apply a brush at the given center position, using the full brush pipeline.
 ///
@@ -42,7 +42,8 @@ pub fn apply_brush(
     };
 
     // Check if this appearance is a ground tile (has bank/ground flag)
-    let is_ground = appearances.as_ref()
+    let is_ground = appearances
+        .as_ref()
         .and_then(|apps| apps.get(pte_appearances::Category::Object, raw_id as u32))
         .and_then(|app| app.flags.as_ref())
         .map(|f| f.bank.is_some())
@@ -67,7 +68,10 @@ pub fn apply_brush(
     }
 
     ApplyResult {
-        undo: UndoAction { tiles_before, tiles_after },
+        undo: UndoAction {
+            tiles_before,
+            tiles_after,
+        },
         dirty_positions: positions,
     }
 }
@@ -81,7 +85,10 @@ pub struct ApplyResult {
 impl ApplyResult {
     pub fn empty() -> Self {
         Self {
-            undo: UndoAction { tiles_before: vec![], tiles_after: vec![] },
+            undo: UndoAction {
+                tiles_before: vec![],
+                tiles_after: vec![],
+            },
             dirty_positions: vec![],
         }
     }

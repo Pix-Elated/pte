@@ -8,7 +8,11 @@ use crate::theme;
 pub enum TownAction {
     None,
     /// Navigate camera to a town's temple position.
-    GoTo { x: u16, y: u16, z: u8 },
+    GoTo {
+        x: u16,
+        y: u16,
+        z: u8,
+    },
 }
 
 pub fn show(ctx: &egui::Context, state: &mut EditorState) -> TownAction {
@@ -32,14 +36,21 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> TownAction {
 
             // ── Add new town ──
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("New town:").size(11.0).color(theme::TEXT_SECONDARY));
+                ui.label(
+                    egui::RichText::new("New town:")
+                        .size(11.0)
+                        .color(theme::TEXT_SECONDARY),
+                );
                 ui.add(
                     egui::TextEdit::singleline(&mut state.town_new_name)
                         .desired_width(140.0)
                         .hint_text("Town name"),
                 );
                 let can_add = !state.town_new_name.trim().is_empty();
-                if ui.add_enabled(can_add, egui::Button::new("+ Add")).clicked() {
+                if ui
+                    .add_enabled(can_add, egui::Button::new("+ Add"))
+                    .clicked()
+                {
                     let next_id = map.towns.iter().map(|t| t.id).max().unwrap_or(0) + 1;
                     let name = state.town_new_name.trim().to_string();
                     map.towns.push(pte_otbm::Town {
@@ -121,10 +132,8 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> TownAction {
                                                     .on_hover_text("Set temple to camera pos")
                                                     .clicked()
                                                 {
-                                                    town.position.x =
-                                                        state.camera.center_x as u16;
-                                                    town.position.y =
-                                                        state.camera.center_y as u16;
+                                                    town.position.x = state.camera.center_x as u16;
+                                                    town.position.y = state.camera.center_y as u16;
                                                     town.position.z = state.camera.z_level;
                                                 }
                                             },
@@ -144,7 +153,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> TownAction {
                                         let mut z = town.position.z as i32;
 
                                         ui.label(
-                                            egui::RichText::new("X").size(9.5).color(theme::TEXT_MUTED),
+                                            egui::RichText::new("X")
+                                                .size(9.5)
+                                                .color(theme::TEXT_MUTED),
                                         );
                                         if ui
                                             .add(
@@ -158,7 +169,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> TownAction {
                                         }
 
                                         ui.label(
-                                            egui::RichText::new("Y").size(9.5).color(theme::TEXT_MUTED),
+                                            egui::RichText::new("Y")
+                                                .size(9.5)
+                                                .color(theme::TEXT_MUTED),
                                         );
                                         if ui
                                             .add(
@@ -172,7 +185,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> TownAction {
                                         }
 
                                         ui.label(
-                                            egui::RichText::new("Z").size(9.5).color(theme::TEXT_MUTED),
+                                            egui::RichText::new("Z")
+                                                .size(9.5)
+                                                .color(theme::TEXT_MUTED),
                                         );
                                         if ui
                                             .add(

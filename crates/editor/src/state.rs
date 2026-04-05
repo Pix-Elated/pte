@@ -72,7 +72,18 @@ pub struct BackgroundLoader {
     /// Channel to receive loaded assets from the background thread.
     pub asset_rx: Option<std::sync::mpsc::Receiver<Result<LoadedAssets, String>>>,
     /// Channel for standalone map loading (when assets already loaded).
-    pub map_rx: Option<std::sync::mpsc::Receiver<Result<(pte_otbm::MapData, std::path::PathBuf, Vec<crate::spawn_xml::Spawn>), String>>>,
+    pub map_rx: Option<
+        std::sync::mpsc::Receiver<
+            Result<
+                (
+                    pte_otbm::MapData,
+                    std::path::PathBuf,
+                    Vec<crate::spawn_xml::Spawn>,
+                ),
+                String,
+            >,
+        >,
+    >,
     /// Shared progress for standalone map loading.
     pub map_progress: Option<std::sync::Arc<std::sync::Mutex<LoadingProgress>>>,
 }
@@ -179,44 +190,44 @@ impl CategoryFilter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectSubcategory {
     All,
-    Ground,         // bank flag set
-    Borders,        // bottom flag (rendered below objects)
-    Walls,          // unpass + not bank (blocking, non-ground)
-    Containers,     // container flag
-    Equipment,      // clothes flag
-    Decoration,     // market.category == DECORATION, or deco_kit, or lying_object
-    Pickupable,     // take flag
-    Stackable,      // cumulative flag
-    Hangable,       // hang flag
-    Liquid,         // liquidpool flag
-    Usable,         // usable or multiuse
-    Weapons,        // market category in weapon types
-    Light,          // light flag set
-    Writable,       // write or write_once
-    Corpse,         // corpse or player_corpse
-    Other,          // anything not matching above
+    Ground,     // bank flag set
+    Borders,    // bottom flag (rendered below objects)
+    Walls,      // unpass + not bank (blocking, non-ground)
+    Containers, // container flag
+    Equipment,  // clothes flag
+    Decoration, // market.category == DECORATION, or deco_kit, or lying_object
+    Pickupable, // take flag
+    Stackable,  // cumulative flag
+    Hangable,   // hang flag
+    Liquid,     // liquidpool flag
+    Usable,     // usable or multiuse
+    Weapons,    // market category in weapon types
+    Light,      // light flag set
+    Writable,   // write or write_once
+    Corpse,     // corpse or player_corpse
+    Other,      // anything not matching above
 }
 
 impl ObjectSubcategory {
     pub fn label(self) -> &'static str {
         match self {
-            Self::All        => "All",
-            Self::Ground     => "Ground",
-            Self::Borders    => "Borders",
-            Self::Walls      => "Walls",
+            Self::All => "All",
+            Self::Ground => "Ground",
+            Self::Borders => "Borders",
+            Self::Walls => "Walls",
             Self::Containers => "Containers",
-            Self::Equipment  => "Equipment",
+            Self::Equipment => "Equipment",
             Self::Decoration => "Decoration",
             Self::Pickupable => "Pickupable",
-            Self::Stackable  => "Stackable",
-            Self::Hangable   => "Hangable",
-            Self::Liquid     => "Liquid",
-            Self::Usable     => "Usable",
-            Self::Weapons    => "Weapons",
-            Self::Light      => "Light",
-            Self::Writable   => "Writable",
-            Self::Corpse     => "Corpse",
-            Self::Other      => "Other",
+            Self::Stackable => "Stackable",
+            Self::Hangable => "Hangable",
+            Self::Liquid => "Liquid",
+            Self::Usable => "Usable",
+            Self::Weapons => "Weapons",
+            Self::Light => "Light",
+            Self::Writable => "Writable",
+            Self::Corpse => "Corpse",
+            Self::Other => "Other",
         }
     }
 
@@ -281,11 +292,19 @@ impl UndoAction {
     pub fn merge(&mut self, other: UndoAction) {
         for (x, y, z, after) in other.tiles_after {
             // Update the 'after' for this position if we already have it
-            if let Some(existing) = self.tiles_after.iter_mut().find(|(ex, ey, ez, _)| *ex == x && *ey == y && *ez == z) {
+            if let Some(existing) = self
+                .tiles_after
+                .iter_mut()
+                .find(|(ex, ey, ez, _)| *ex == x && *ey == y && *ez == z)
+            {
                 existing.3 = after;
             } else {
                 // New position — find its 'before' from the other action
-                let before = other.tiles_before.iter().find(|(bx, by, bz, _)| *bx == x && *by == y && *bz == z).cloned();
+                let before = other
+                    .tiles_before
+                    .iter()
+                    .find(|(bx, by, bz, _)| *bx == x && *by == y && *bz == z)
+                    .cloned();
                 if let Some(before) = before {
                     self.tiles_before.push(before);
                 }
@@ -321,33 +340,10 @@ pub struct Camera {
 /// Each step is roughly 1.5× apart, giving a smooth feel at all scales.
 /// Ranges from 0.03% (whole 65k map) to 800% (pixel editing).
 const ZOOM_LEVELS: &[f32] = &[
-    0.0003,  // 65536-tile overview
-    0.0006,
-    0.001,
-    0.002,
-    0.004,
-    0.007,
-    0.012,
-    0.02,
-    0.035,
-    0.06,
-    0.1,
-    0.15,
-    0.25,
-    0.375,
-    0.5,
-    0.67,
-    0.85,
-    1.0,     // 1:1 (32 px/tile)
-    1.25,
-    1.5,
-    2.0,
-    2.5,
-    3.0,
-    4.0,
-    5.0,
-    6.0,
-    8.0,     // max zoom
+    0.0003, // 65536-tile overview
+    0.0006, 0.001, 0.002, 0.004, 0.007, 0.012, 0.02, 0.035, 0.06, 0.1, 0.15, 0.25, 0.375, 0.5,
+    0.67, 0.85, 1.0, // 1:1 (32 px/tile)
+    1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, // max zoom
 ];
 
 impl Default for Camera {
@@ -854,7 +850,9 @@ impl EditorState {
             highlight_moveable: false,
             highlight_blocking: false,
             highlight_hooks: false,
-            hotkeys: (0..10).map(|_| crate::hotkeys::HotkeySlot::default()).collect(),
+            hotkeys: (0..10)
+                .map(|_| crate::hotkeys::HotkeySlot::default())
+                .collect(),
             show_hotkey_editor: false,
             show_tile_stack: false,
             show_preferences: false,
@@ -889,7 +887,9 @@ impl EditorState {
 
     /// Push an undo action.
     pub fn push_undo(&mut self, action: UndoAction) {
-        if action.is_empty() { return; }
+        if action.is_empty() {
+            return;
+        }
         // Truncate any redo actions
         self.undo_stack.truncate(self.undo_cursor);
         self.undo_stack.push(action);
@@ -905,7 +905,9 @@ impl EditorState {
 
     /// Accumulate an undo action into the current stroke (batches during drag).
     pub fn stroke_add(&mut self, action: UndoAction) {
-        if action.is_empty() { return; }
+        if action.is_empty() {
+            return;
+        }
         self.stroke.active = true;
         match self.stroke.undo {
             Some(ref mut existing) => existing.merge(action),

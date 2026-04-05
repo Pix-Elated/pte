@@ -8,7 +8,11 @@ use crate::theme;
 pub enum WaypointAction {
     None,
     /// Navigate camera to a waypoint position.
-    GoTo { x: u16, y: u16, z: u8 },
+    GoTo {
+        x: u16,
+        y: u16,
+        z: u8,
+    },
 }
 
 pub fn show(ctx: &egui::Context, state: &mut EditorState) -> WaypointAction {

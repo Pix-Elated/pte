@@ -26,7 +26,9 @@ impl Default for HotkeySlot {
 
 /// Save the current camera position + active brush to a hotkey slot.
 pub fn save_hotkey(state: &mut EditorState, slot: usize) {
-    if slot >= state.hotkeys.len() { return; }
+    if slot >= state.hotkeys.len() {
+        return;
+    }
     state.hotkeys[slot].position = Some((
         state.camera.center_x,
         state.camera.center_y,
@@ -41,7 +43,9 @@ pub fn save_hotkey(state: &mut EditorState, slot: usize) {
 
 /// Jump to a hotkey position and optionally activate its brush.
 pub fn recall_hotkey(state: &mut EditorState, slot: usize) {
-    if slot >= state.hotkeys.len() { return; }
+    if slot >= state.hotkeys.len() {
+        return;
+    }
     // Copy data out to avoid borrow conflict
     let position = state.hotkeys[slot].position;
     let item_id = state.hotkeys[slot].item_id;
@@ -104,7 +108,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                                         .color(theme::TEXT_MUTED),
                                 );
                             } else {
-                                ui.label(egui::RichText::new("—").size(10.0).color(theme::TEXT_MUTED));
+                                ui.label(
+                                    egui::RichText::new("—").size(10.0).color(theme::TEXT_MUTED),
+                                );
                             }
 
                             if ui.small_button("Goto").clicked() {

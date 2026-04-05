@@ -178,12 +178,10 @@ pub fn show(ctx: &egui::Context, wizard: &mut NewProjectWizard) {
         .resizable(false)
         .default_size([480.0, 0.0])
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(ctx, |ui| {
-            match wizard.step {
-                WizardStep::Setup => show_setup(ui, wizard),
-                WizardStep::Creating => show_creating(ui, wizard),
-                WizardStep::Done => show_done(ui, wizard),
-            }
+        .show(ctx, |ui| match wizard.step {
+            WizardStep::Setup => show_setup(ui, wizard),
+            WizardStep::Creating => show_creating(ui, wizard),
+            WizardStep::Done => show_done(ui, wizard),
         });
 
     wizard.open = is_open;
@@ -193,9 +191,11 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
     ui.heading("Create a New OT Project");
     ui.add_space(4.0);
     ui.label(
-        egui::RichText::new("Set up a project with blank assets, ready for creating your own content.")
-            .size(11.0)
-            .color(theme::TEXT_SECONDARY),
+        egui::RichText::new(
+            "Set up a project with blank assets, ready for creating your own content.",
+        )
+        .size(11.0)
+        .color(theme::TEXT_SECONDARY),
     );
     ui.add_space(12.0);
 
@@ -205,7 +205,11 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
             // Name
-            ui.label(egui::RichText::new("Project Name:").size(11.0).color(theme::TEXT_SECONDARY));
+            ui.label(
+                egui::RichText::new("Project Name:")
+                    .size(11.0)
+                    .color(theme::TEXT_SECONDARY),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut wizard.project_name)
                     .desired_width(280.0)
@@ -214,9 +218,15 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
             ui.end_row();
 
             // Directory
-            ui.label(egui::RichText::new("Location:").size(11.0).color(theme::TEXT_SECONDARY));
+            ui.label(
+                egui::RichText::new("Location:")
+                    .size(11.0)
+                    .color(theme::TEXT_SECONDARY),
+            );
             ui.horizontal(|ui| {
-                let dir_str = wizard.project_dir.as_ref()
+                let dir_str = wizard
+                    .project_dir
+                    .as_ref()
                     .map_or("(not set)".to_string(), |d| d.display().to_string());
                 let truncated = if dir_str.len() > 40 {
                     format!("…{}", &dir_str[dir_str.len() - 38..])
@@ -240,7 +250,11 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
             ui.end_row();
 
             // Protocol version
-            ui.label(egui::RichText::new("Protocol:").size(11.0).color(theme::TEXT_SECONDARY));
+            ui.label(
+                egui::RichText::new("Protocol:")
+                    .size(11.0)
+                    .color(theme::TEXT_SECONDARY),
+            );
             egui::ComboBox::from_id_salt("protocol_combo")
                 .selected_text(wizard.protocol.label())
                 .width(280.0)
@@ -257,9 +271,15 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
             ui.end_row();
 
             // Format indicator
-            ui.label(egui::RichText::new("Asset Format:").size(11.0).color(theme::TEXT_SECONDARY));
+            ui.label(
+                egui::RichText::new("Asset Format:")
+                    .size(11.0)
+                    .color(theme::TEXT_SECONDARY),
+            );
             let fmt_str = match wizard.protocol.format() {
-                AssetFormat::Protobuf => "Protobuf (catalog-content.json + appearances.dat + .cip sheets)",
+                AssetFormat::Protobuf => {
+                    "Protobuf (catalog-content.json + appearances.dat + .cip sheets)"
+                }
                 AssetFormat::Legacy => "Legacy (Tibia.dat + Tibia.spr)",
             };
             ui.label(
@@ -270,11 +290,23 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
             ui.end_row();
 
             // Map dimensions
-            ui.label(egui::RichText::new("Map Size:").size(11.0).color(theme::TEXT_SECONDARY));
+            ui.label(
+                egui::RichText::new("Map Size:")
+                    .size(11.0)
+                    .color(theme::TEXT_SECONDARY),
+            );
             ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut wizard.map_width).range(256..=65535).speed(64));
+                ui.add(
+                    egui::DragValue::new(&mut wizard.map_width)
+                        .range(256..=65535)
+                        .speed(64),
+                );
                 ui.label("×");
-                ui.add(egui::DragValue::new(&mut wizard.map_height).range(256..=65535).speed(64));
+                ui.add(
+                    egui::DragValue::new(&mut wizard.map_height)
+                        .range(256..=65535)
+                        .speed(64),
+                );
                 ui.label(
                     egui::RichText::new("tiles")
                         .size(10.0)
@@ -295,25 +327,35 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
     );
     ui.add_space(4.0);
 
-    ui.checkbox(&mut wizard.fetch_canary, "Fetch & install Canary server (latest release)");
+    ui.checkbox(
+        &mut wizard.fetch_canary,
+        "Fetch & install Canary server (latest release)",
+    );
     ui.indent("canary_info", |ui| {
         ui.label(
-            egui::RichText::new("Downloads the latest Canary release from GitHub and sets up a server directory. \
-            The default map will be replaced with your blank project map.")
-                .size(10.0)
-                .color(theme::TEXT_MUTED),
+            egui::RichText::new(
+                "Downloads the latest Canary release from GitHub and sets up a server directory. \
+            The default map will be replaced with your blank project map.",
+            )
+            .size(10.0)
+            .color(theme::TEXT_MUTED),
         );
     });
 
     ui.add_space(4.0);
 
-    ui.checkbox(&mut wizard.fetch_otclient, "Fetch & install OTClient (latest release)");
+    ui.checkbox(
+        &mut wizard.fetch_otclient,
+        "Fetch & install OTClient (latest release)",
+    );
     ui.indent("otclient_info", |ui| {
         ui.label(
-            egui::RichText::new("Downloads the latest OTClient release from GitHub. \
-            Client data files will be replaced with your project's blank assets.")
-                .size(10.0)
-                .color(theme::TEXT_MUTED),
+            egui::RichText::new(
+                "Downloads the latest OTClient release from GitHub. \
+            Client data files will be replaced with your project's blank assets.",
+            )
+            .size(10.0)
+            .color(theme::TEXT_MUTED),
         );
     });
 
@@ -327,8 +369,7 @@ fn show_setup(ui: &mut egui::Ui, wizard: &mut NewProjectWizard) {
 
     // ── Action buttons ──
     ui.horizontal(|ui| {
-        let can_create = !wizard.project_name.is_empty()
-            && wizard.project_dir.is_some();
+        let can_create = !wizard.project_name.is_empty() && wizard.project_dir.is_some();
 
         let create_btn = egui::Button::new(
             egui::RichText::new("Create Project")
@@ -459,7 +500,10 @@ fn create_project(
 
     for dir in [&root, &data_dir, &world_dir, &custom_dir] {
         if let Err(e) = std::fs::create_dir_all(dir) {
-            return ProjectCreationResult::Error(format!("Failed to create {}: {e}", dir.display()));
+            return ProjectCreationResult::Error(format!(
+                "Failed to create {}: {e}",
+                dir.display()
+            ));
         }
     }
 
@@ -669,7 +713,9 @@ fn create_legacy_assets(
     for chunk in void_pixels.chunks_exact_mut(4) {
         chunk.copy_from_slice(&[20, 20, 20, 255]);
     }
-    spr.add_sprite(Sprite { pixels: void_pixels });
+    spr.add_sprite(Sprite {
+        pixels: void_pixels,
+    });
 
     // Sprite 3: brown ground tile
     let mut ground_pixels = vec![0u8; Sprite::BYTE_COUNT];
@@ -686,7 +732,9 @@ fn create_legacy_assets(
         let idx = y * 32 * 4;
         ground_pixels[idx..idx + 4].copy_from_slice(&[100, 85, 55, 255]);
     }
-    spr.add_sprite(Sprite { pixels: ground_pixels });
+    spr.add_sprite(Sprite {
+        pixels: ground_pixels,
+    });
 
     write_spr(&spr, &data_dir.join("Tibia.spr"))?;
 
@@ -795,7 +843,12 @@ fn create_blank_map(
     let map_filename = format!("{}.otbm", name);
     pte_otbm::serialize_otbm(&map, &world_dir.join(&map_filename))?;
 
-    tracing::info!("Created blank map {}×{} at {}", width, height, world_dir.display());
+    tracing::info!(
+        "Created blank map {}×{} at {}",
+        width,
+        height,
+        world_dir.display()
+    );
     Ok(())
 }
 
@@ -826,7 +879,8 @@ fn create_config_lua(
     let port = 7172;
     let login_port = 7171;
 
-    let config = format!(r#"-- {name} server configuration
+    let config = format!(
+        r#"-- {name} server configuration
 -- Generated by Pixelated's Tibia Editor
 
 -- Server
@@ -887,10 +941,7 @@ fn fetch_latest_release_asset(
 
     let resp: serde_json::Value = client.get(&url).send()?.json()?;
 
-    let tag = resp["tag_name"]
-        .as_str()
-        .unwrap_or("unknown")
-        .to_string();
+    let tag = resp["tag_name"].as_str().unwrap_or("unknown").to_string();
 
     let assets = resp["assets"]
         .as_array()
@@ -940,7 +991,9 @@ fn extract_zip(zip_path: &std::path::Path, dest_dir: &std::path::Path) -> anyhow
 
         // Strip the top-level directory if present (common in GitHub releases)
         let out_path = if let Ok(stripped) = name.strip_prefix(
-            name.components().next().unwrap_or(std::path::Component::CurDir),
+            name.components()
+                .next()
+                .unwrap_or(std::path::Component::CurDir),
         ) {
             if stripped.as_os_str().is_empty() {
                 continue; // skip the top-level dir itself
@@ -973,14 +1026,10 @@ fn fetch_and_setup_canary(
 ) -> anyhow::Result<()> {
     tracing::info!("Fetching latest Canary release…");
 
-    let (url, tag) = fetch_latest_release_asset(
-        "opentibiabr",
-        "canary",
-        &|name: &str| {
-            let lower = name.to_lowercase();
-            lower.contains("windows") && lower.ends_with(".zip")
-        },
-    )?;
+    let (url, tag) = fetch_latest_release_asset("opentibiabr", "canary", &|name: &str| {
+        let lower = name.to_lowercase();
+        lower.contains("windows") && lower.ends_with(".zip")
+    })?;
 
     tracing::info!("Downloading Canary {} …", tag);
     let zip_path = root.join("canary-download.zip");
@@ -1057,14 +1106,10 @@ fn fetch_and_setup_otclient(
     tracing::info!("Fetching latest OTClient release…");
 
     // Try mehah/otclient (most popular fork)
-    let (url, tag) = fetch_latest_release_asset(
-        "mehah",
-        "otclient",
-        &|name: &str| {
-            let lower = name.to_lowercase();
-            lower.contains("windows") && (lower.ends_with(".zip") || lower.ends_with(".7z"))
-        },
-    )?;
+    let (url, tag) = fetch_latest_release_asset("mehah", "otclient", &|name: &str| {
+        let lower = name.to_lowercase();
+        lower.contains("windows") && (lower.ends_with(".zip") || lower.ends_with(".7z"))
+    })?;
 
     tracing::info!("Downloading OTClient {} …", tag);
     let zip_path = client_dir

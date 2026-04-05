@@ -1,6 +1,6 @@
 //! Context menu — right-click on a tile for quick actions.
 
-use crate::state::{EditorState, ToolType, TileSelection, UndoAction};
+use crate::state::{EditorState, TileSelection, ToolType, UndoAction};
 use crate::theme;
 
 /// Call this after viewport rendering. Shows a context menu on right-click.
@@ -40,9 +40,12 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     // Tile info header
                     if let Some((hx, hy)) = hover {
                         ui.label(
-                            egui::RichText::new(format!("Tile ({}, {}, {})", hx, hy, state.camera.z_level))
-                                .size(10.0)
-                                .color(theme::TEXT_MUTED),
+                            egui::RichText::new(format!(
+                                "Tile ({}, {}, {})",
+                                hx, hy, state.camera.z_level
+                            ))
+                            .size(10.0)
+                            .color(theme::TEXT_MUTED),
                         );
                         ui.separator();
                     }
@@ -78,7 +81,10 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     if let Some((hx, hy)) = hover {
                         if ui.button("⬚ Select This Tile").clicked() {
                             state.selection = Some(TileSelection {
-                                x1: hx, y1: hy, x2: hx, y2: hy,
+                                x1: hx,
+                                y1: hy,
+                                x2: hx,
+                                y2: hy,
                             });
                             state.active_tool = ToolType::Select;
                             close_popup(ctx, popup_id);
@@ -89,9 +95,16 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     if let Some((hx, hy)) = hover {
                         if ui.button("💧 Pick Item Here").clicked() {
                             if let Some(ref map) = state.map_data {
-                                if let Some(id) = crate::tools::eyedropper::pick_item_id(map, hx, hy, state.camera.z_level) {
+                                if let Some(id) = crate::tools::eyedropper::pick_item_id(
+                                    map,
+                                    hx,
+                                    hy,
+                                    state.camera.z_level,
+                                ) {
                                     state.selected_item_id = Some(id);
-                                    if let Some(brush) = state.brush_registry.ground_brush_for_item(id as u16) {
+                                    if let Some(brush) =
+                                        state.brush_registry.ground_brush_for_item(id as u16)
+                                    {
                                         state.active_brush = Some(brush.id());
                                     }
                                     state.active_tool = ToolType::Brush;
@@ -123,7 +136,9 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     if let Some((hx, hy)) = hover {
                         let z = state.camera.z_level;
                         // Collect item info before mutable borrow
-                        let items_info: Vec<(usize, u16, Option<String>)> = state.map_data.as_ref()
+                        let items_info: Vec<(usize, u16, Option<String>)> = state
+                            .map_data
+                            .as_ref()
                             .and_then(|m| m.get_tile(hx, hy, z))
                             .map(|tile| {
                                 let mut info = Vec::new();
@@ -157,12 +172,13 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                                             } else if idx < tile.items.len() {
                                                 tile.items.remove(idx);
                                             }
-                                            let after = if tile.ground.is_none() && tile.items.is_empty() {
-                                                map.remove_tile(hx, hy, z);
-                                                None
-                                            } else {
-                                                Some(tile.clone())
-                                            };
+                                            let after =
+                                                if tile.ground.is_none() && tile.items.is_empty() {
+                                                    map.remove_tile(hx, hy, z);
+                                                    None
+                                                } else {
+                                                    Some(tile.clone())
+                                                };
                                             state.push_undo(UndoAction {
                                                 tiles_before: vec![(hx, hy, z, old)],
                                                 tiles_after: vec![(hx, hy, z, after)],
@@ -187,12 +203,17 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) {
                     if let Some((hx, hy)) = hover {
                         // Extract teleport destination before borrowing state mutably
                         let tele_dest = state.map_data.as_ref().and_then(|map| {
-                            map.get_tile(hx, hy, state.camera.z_level).and_then(|tile| {
-                                tile.items.iter().find_map(|item| item.tele_dest)
-                            })
+                            map.get_tile(hx, hy, state.camera.z_level)
+                                .and_then(|tile| tile.items.iter().find_map(|item| item.tele_dest))
                         });
                         if let Some(dest) = tele_dest {
-                            if ui.button(format!("🔗 Go to TP dest ({}, {}, {})", dest.x, dest.y, dest.z)).clicked() {
+                            if ui
+                                .button(format!(
+                                    "🔗 Go to TP dest ({}, {}, {})",
+                                    dest.x, dest.y, dest.z
+                                ))
+                                .clicked()
+                            {
                                 state.camera.center_x = dest.x as f64;
                                 state.camera.center_y = dest.y as f64;
                                 state.camera.z_level = dest.z;

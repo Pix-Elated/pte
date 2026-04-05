@@ -3,9 +3,9 @@
 //! When you paint a table, it selects the correct piece (alone, north end,
 //! south end, east end, west end, horizontal, vertical) based on neighbors.
 
-use pte_otbm::MapData;
-use crate::state::UndoAction;
 use super::{Brush, BrushId, BrushStroke, BrushType};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
 
 /// The 7 table alignment types (matching RME).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +32,7 @@ impl TableAlignment {
 
         match (n, e, s, w) {
             (false, false, false, false) => Self::Alone,
-            (true, false, false, false) => Self::SouthEnd,  // Neighbor north → south end
+            (true, false, false, false) => Self::SouthEnd, // Neighbor north → south end
             (false, true, false, false) => Self::WestEnd,
             (false, false, true, false) => Self::NorthEnd,
             (false, false, false, true) => Self::EastEnd,
@@ -80,11 +80,21 @@ impl TableBrush {
 }
 
 impl Brush for TableBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.brush_name }
-    fn brush_type(&self) -> BrushType { BrushType::Table }
-    fn look_id(&self) -> u16 { self.look_id }
-    fn needs_border_update(&self) -> bool { true }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.brush_name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Table
+    }
+    fn look_id(&self) -> u16 {
+        self.look_id
+    }
+    fn needs_border_update(&self) -> bool {
+        true
+    }
 
     fn all_item_ids(&self) -> Vec<u16> {
         self.collect_item_ids()
@@ -122,7 +132,10 @@ impl Brush for TableBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }
@@ -161,7 +174,10 @@ impl Brush for TableBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }

@@ -3,11 +3,11 @@
 //!
 //! Replicates RME's GroundBrush, the most complex and valuable brush type.
 
-use rand::Rng;
-use pte_otbm::MapData;
-use crate::state::UndoAction;
+use super::border::{compute_neighbor_mask, get_border_items, AutoBorder, NEIGHBOR_OFFSETS};
 use super::{Brush, BrushId, BrushStroke, BrushType};
-use super::border::{AutoBorder, NEIGHBOR_OFFSETS, compute_neighbor_mask, get_border_items};
+use crate::state::UndoAction;
+use pte_otbm::MapData;
+use rand::Rng;
 
 /// A weighted item entry for random ground selection.
 #[derive(Debug, Clone)]
@@ -174,13 +174,27 @@ impl GroundBrush {
 }
 
 impl Brush for GroundBrush {
-    fn id(&self) -> BrushId { self.brush_id }
-    fn name(&self) -> &str { &self.brush_name }
-    fn brush_type(&self) -> BrushType { BrushType::Ground }
-    fn look_id(&self) -> u16 { self.look_id }
-    fn is_ground(&self) -> bool { true }
-    fn needs_border_update(&self) -> bool { true }
-    fn outer_border(&self) -> Option<&AutoBorder> { self.outer_border.as_ref() }
+    fn id(&self) -> BrushId {
+        self.brush_id
+    }
+    fn name(&self) -> &str {
+        &self.brush_name
+    }
+    fn brush_type(&self) -> BrushType {
+        BrushType::Ground
+    }
+    fn look_id(&self) -> u16 {
+        self.look_id
+    }
+    fn is_ground(&self) -> bool {
+        true
+    }
+    fn needs_border_update(&self) -> bool {
+        true
+    }
+    fn outer_border(&self) -> Option<&AutoBorder> {
+        self.outer_border.as_ref()
+    }
 
     fn all_item_ids(&self) -> Vec<u16> {
         self.items.iter().map(|w| w.id).collect()
@@ -215,7 +229,10 @@ impl Brush for GroundBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }
@@ -232,8 +249,8 @@ impl Brush for GroundBrush {
             // Check if this tile's ground belongs to this brush
             if let Some(tile) = &before {
                 if let Some(ground_id) = tile.ground {
-                    let is_ours = self.items.iter().any(|w| w.id == ground_id)
-                        || ground_id == self.look_id;
+                    let is_ours =
+                        self.items.iter().any(|w| w.id == ground_id) || ground_id == self.look_id;
                     if is_ours {
                         let tile_mut = map.get_tile_mut(x, y, z);
                         tile_mut.ground = None;
@@ -249,7 +266,8 @@ impl Brush for GroundBrush {
                         for &(dx, dy) in &NEIGHBOR_OFFSETS {
                             let nx = x as i32 + dx;
                             let ny = y as i32 + dy;
-                            if nx >= 0 && ny >= 0 && nx <= u16::MAX as i32 && ny <= u16::MAX as i32 {
+                            if nx >= 0 && ny >= 0 && nx <= u16::MAX as i32 && ny <= u16::MAX as i32
+                            {
                                 dirty.push((nx as u16, ny as u16, z));
                             }
                         }
@@ -265,7 +283,10 @@ impl Brush for GroundBrush {
         dirty.dedup();
 
         BrushStroke {
-            undo: UndoAction { tiles_before, tiles_after },
+            undo: UndoAction {
+                tiles_before,
+                tiles_after,
+            },
             dirty_positions: dirty,
         }
     }

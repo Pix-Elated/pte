@@ -111,7 +111,10 @@ pub fn parse_catalog(json: &str) -> Result<ParsedCatalog> {
 }
 
 /// Find which sheet contains a given sprite ID (binary search).
-pub fn find_sheet_for_sprite(sheets: &[SpriteSheetInfo], sprite_id: u32) -> Option<&SpriteSheetInfo> {
+pub fn find_sheet_for_sprite(
+    sheets: &[SpriteSheetInfo],
+    sprite_id: u32,
+) -> Option<&SpriteSheetInfo> {
     let idx = sheets.partition_point(|s| s.first_sprite_id <= sprite_id);
     if idx == 0 {
         return None;
