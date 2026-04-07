@@ -7,12 +7,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
     let z_surface = state.z_surface;
     let current_z = state.camera.z_level;
 
-    // Collect occupied z-levels from the map
-    let occupied: std::collections::BTreeSet<u8> = state
-        .map_data
-        .as_ref()
-        .map(|m| m.occupied_z_levels().into_iter().collect())
-        .unwrap_or_default();
+    // Collect occupied z-levels from the cached data (avoids recomputing every frame)
+    let occupied: std::collections::BTreeSet<u8> =
+        state.cached_z_levels.iter().copied().collect();
 
     // Build the display list: occupied floors + always show surface + current
     let mut visible: Vec<u8> = occupied.iter().copied().collect();
@@ -112,15 +109,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 };
 
                 let tile_count = state
-                    .map_data
-                    .as_ref()
-                    .map(|m| {
-                        m.chunks
-                            .iter()
-                            .filter(|(k, _)| k.z == z)
-                            .map(|(_, c)| c.len())
-                            .sum::<usize>()
-                    })
+                    .cached_z_tile_counts
+                    .get(&z)
+                    .copied()
                     .unwrap_or(0);
 
                 let display = if tile_count > 0 {

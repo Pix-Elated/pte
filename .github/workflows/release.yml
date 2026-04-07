@@ -225,6 +225,8 @@ jobs:
 
           ## Verification
 
+          Executables are not code-signed. Windows SmartScreen may show a warning on first run.
+
           <details>
           <summary>SHA-256 Checksums</summary>
 

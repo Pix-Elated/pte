@@ -341,10 +341,14 @@ impl MapData {
 
     /// Returns the set of z-levels that actually contain tiles, sorted ascending.
     pub fn occupied_z_levels(&self) -> Vec<u8> {
-        let mut zs: Vec<u8> = self.chunks.keys().map(|k| k.z).collect();
-        zs.sort_unstable();
-        zs.dedup();
-        zs
+        let mut present = [false; 256];
+        for key in self.chunks.keys() {
+            present[key.z as usize] = true;
+        }
+        present.iter().enumerate()
+            .filter(|(_, &p)| p)
+            .map(|(i, _)| i as u8)
+            .collect()
     }
 
     /// Returns (min_z, max_z) of tiles present in the map, or None if empty.

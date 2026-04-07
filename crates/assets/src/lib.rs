@@ -1,5 +1,6 @@
 mod bmp;
 mod catalog;
+pub mod lazy_loader;
 mod lzma;
 mod sprite_sheet;
 
@@ -7,6 +8,7 @@ pub use bmp::encode_rgba_to_bmp;
 pub use catalog::{
     find_sheet_for_sprite, CatalogEntry, ParsedCatalog, SpriteSheetInfo, SpriteType,
 };
+pub use lazy_loader::LazySheetLoader;
 pub use lzma::compress_cip;
 pub use sprite_sheet::{SpriteSheet, SPRITE_SIZE};
 

@@ -22,6 +22,8 @@ mod house_palette;
 mod icons;
 mod item_properties;
 mod layers;
+mod legacy_adapter;
+mod legacy_converter;
 mod map_cleanup;
 mod map_import;
 mod map_properties;

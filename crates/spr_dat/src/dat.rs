@@ -15,7 +15,8 @@ use std::path::Path;
 
 use crate::types::*;
 
-// DAT attribute markers (pre-v1050 format, most OT servers use this).
+// DAT attribute markers (pre-1050 wire format, used by Ravendawn and most OT servers).
+// Note: 0x10 = NoMoveAnimation in wire format; the client remaps internally.
 mod attr {
     pub const GROUND: u8 = 0x00;
     pub const GROUND_BORDER: u8 = 0x01;
@@ -53,7 +54,7 @@ mod attr {
     pub const CLOTH: u8 = 0x21;
     pub const MARKET: u8 = 0x22;
     pub const DEFAULT_ACTION: u8 = 0x23;
-    pub const USABLE: u8 = 0xFE;
+    pub const USABLE: u8 = 0xFE; // reads u16 in Ravendawn (not bool)
     pub const END: u8 = 0xFF;
 }
 
@@ -89,23 +90,51 @@ pub fn parse_dat_bytes(data: &[u8]) -> Result<DatFile> {
 
     // Items: IDs 100..=(99 + item_count)
     for id in DatFile::ITEM_START_ID..=(99 + item_count as u32) {
-        let entry = read_entry(&mut r, id, DatCategory::Item)?;
-        items.push(entry);
+        match read_entry(&mut r, id, DatCategory::Item) {
+            Ok(entry) => items.push(entry),
+            Err(_) => {
+                if !try_recover_entry(&mut r, &data) {
+                    tracing::warn!("DAT: stopping items at ID {} ({} parsed)", id, items.len());
+                    break;
+                }
+            }
+        }
     }
 
     for id in 1..=outfit_count as u32 {
-        let entry = read_entry(&mut r, id, DatCategory::Outfit)?;
-        outfits.push(entry);
+        match read_entry(&mut r, id, DatCategory::Outfit) {
+            Ok(entry) => outfits.push(entry),
+            Err(_) => {
+                if !try_recover_entry(&mut r, &data) {
+                    tracing::warn!("DAT: stopping outfits at ID {} ({} parsed)", id, outfits.len());
+                    break;
+                }
+            }
+        }
     }
 
     for id in 1..=effect_count as u32 {
-        let entry = read_entry(&mut r, id, DatCategory::Effect)?;
-        effects.push(entry);
+        match read_entry(&mut r, id, DatCategory::Effect) {
+            Ok(entry) => effects.push(entry),
+            Err(_) => {
+                if !try_recover_entry(&mut r, &data) {
+                    tracing::warn!("DAT: stopping effects at ID {} ({} parsed)", id, effects.len());
+                    break;
+                }
+            }
+        }
     }
 
     for id in 1..=missile_count as u32 {
-        let entry = read_entry(&mut r, id, DatCategory::Missile)?;
-        missiles.push(entry);
+        match read_entry(&mut r, id, DatCategory::Missile) {
+            Ok(entry) => missiles.push(entry),
+            Err(_) => {
+                if !try_recover_entry(&mut r, &data) {
+                    tracing::warn!("DAT: stopping missiles at ID {} ({} parsed)", id, missiles.len());
+                    break;
+                }
+            }
+        }
     }
 
     Ok(DatFile {
@@ -115,6 +144,48 @@ pub fn parse_dat_bytes(data: &[u8]) -> Result<DatFile> {
         effects,
         missiles,
     })
+}
+
+/// Try to recover from a parse error by scanning forward for 0xFF + valid sprite layout.
+/// Positions the cursor just after the recovered entry's sprite IDs.
+fn try_recover_entry(r: &mut Cursor<&[u8]>, data: &[u8]) -> bool {
+    let start = r.position() as usize;
+    for i in start..data.len().saturating_sub(12) {
+        if data[i] != 0xFF {
+            continue;
+        }
+        let w = data[i + 1];
+        let h = data[i + 2];
+        if !(1..=4).contains(&w) || !(1..=4).contains(&h) {
+            continue;
+        }
+        let skip = if w > 1 || h > 1 { 1 } else { 0 };
+        let li = i + 3 + skip;
+        if li + 5 > data.len() {
+            continue;
+        }
+        let l = data[li];
+        let px = data[li + 1];
+        let py = data[li + 2];
+        let pz = data[li + 3];
+        let fr = data[li + 4];
+        if !(1..=10).contains(&l)
+            || !(1..=10).contains(&px)
+            || !(1..=10).contains(&py)
+            || !(1..=10).contains(&pz)
+            || !(1..=200).contains(&fr)
+        {
+            continue;
+        }
+        let total = l as u32 * px as u32 * py as u32 * pz as u32 * fr as u32
+            * w as u32 * h as u32;
+        let end = li + 5 + total as usize * 4;
+        if end <= data.len() {
+            r.set_position(end as u64);
+            return true;
+        }
+    }
+    false
 }
 
 fn read_entry(r: &mut Cursor<&[u8]>, id: u32, category: DatCategory) -> Result<DatEntry> {
@@ -136,7 +207,12 @@ fn read_flags(r: &mut Cursor<&[u8]>) -> Result<DatFlags> {
         let marker = r.read_u8()?;
         match marker {
             attr::END => break,
-            attr::GROUND => flags.is_ground = Some(r.read_u16::<LittleEndian>()?),
+            attr::GROUND => {
+                // Ravendawn: GROUND marker is a bool flag (no u16 speed data).
+                // We track it but DON'T set is_ground since we can't distinguish
+                // real ground tiles from items that just happen to have 0x00 in flags.
+                flags.raw_attrs.push((0x00, Vec::new()));
+            }
             attr::GROUND_BORDER => flags.is_ground_border = true,
             attr::ON_BOTTOM => flags.is_on_bottom = true,
             attr::ON_TOP => flags.is_on_top = true,
@@ -152,7 +228,7 @@ fn read_flags(r: &mut Cursor<&[u8]>) -> Result<DatFlags> {
             attr::NOT_MOVEABLE => flags.is_not_moveable = true,
             attr::BLOCKS_PROJECTILE => flags.blocks_projectile = true,
             attr::NOT_PATHABLE => flags.is_not_pathable = true,
-            attr::NO_MOVE_ANIMATION => {} // bool flag, no data
+            attr::NO_MOVE_ANIMATION => {}
             attr::PICKUPABLE => flags.is_pickupable = true,
             attr::HANGABLE => flags.is_hangable = true,
             attr::HOOK_SOUTH => flags.hook_south = true,
@@ -166,8 +242,9 @@ fn read_flags(r: &mut Cursor<&[u8]>) -> Result<DatFlags> {
             attr::DONT_HIDE => flags.dont_hide = true,
             attr::TRANSLUCENT => flags.is_translucent = true,
             attr::OFFSET => {
-                let x = r.read_u16::<LittleEndian>()?;
-                let y = r.read_u16::<LittleEndian>()?;
+                // Ravendawn (version 20125 >= 19600): reads u32+u32, values discarded.
+                let x = r.read_u32::<LittleEndian>()? as u16;
+                let y = r.read_u32::<LittleEndian>()? as u16;
                 flags.has_offset = Some((x, y));
             }
             attr::ELEVATION => flags.has_elevation = Some(r.read_u16::<LittleEndian>()?),
@@ -200,14 +277,10 @@ fn read_flags(r: &mut Cursor<&[u8]>) -> Result<DatFlags> {
             attr::DEFAULT_ACTION => flags.has_default_action = Some(r.read_u16::<LittleEndian>()?),
             attr::USABLE => flags.is_usable = true,
             unknown => {
-                // Unknown attribute — we can't know its length, so we store
-                // the marker and stop reading flags (safest approach).
-                tracing::warn!(
-                    "Unknown DAT attribute 0x{:02X}, stopping flag parse",
-                    unknown
-                );
+                // Assume unknown attrs are bool flags (no data payload).
+                // This matches OTClient behavior where the default case reads 0 bytes.
+                tracing::debug!("Unknown DAT attribute 0x{:02X}, treating as bool", unknown);
                 flags.raw_attrs.push((unknown, Vec::new()));
-                break;
             }
         }
     }
@@ -231,13 +304,40 @@ fn read_sprite_layout(r: &mut Cursor<&[u8]>) -> Result<SpriteLayout> {
     let pattern_z = r.read_u8()?;
     let frames = r.read_u8()?;
 
-    let total_sprites = width as u32
-        * height as u32
-        * layers as u32
-        * pattern_x as u32
-        * pattern_y as u32
-        * pattern_z as u32
-        * frames as u32;
+    // Animation timing data (present when frames > 1 in extended DAT formats).
+    // Format: u8 anim_type + u32 loop_count + u8 start_phase + frames * (u32 min + u32 max)
+    if frames > 1 {
+        let _anim_type = r.read_u8()?;
+        let _loop_count = r.read_u32::<LittleEndian>()?;
+        let _start_phase = r.read_u8()?;
+        for _ in 0..frames {
+            let _min_dur = r.read_u32::<LittleEndian>()?;
+            let _max_dur = r.read_u32::<LittleEndian>()?;
+        }
+    }
+
+    let total_sprites = (width as u32)
+        .saturating_mul(height as u32)
+        .saturating_mul(layers as u32)
+        .saturating_mul(pattern_x as u32)
+        .saturating_mul(pattern_y as u32)
+        .saturating_mul(pattern_z as u32)
+        .saturating_mul(frames as u32);
+
+    // Sanity check: unreasonably large layouts indicate corrupted data
+    if total_sprites > 1_000_000 {
+        anyhow::bail!(
+            "Sprite layout too large ({} sprites): w={} h={} l={} px={} py={} pz={} f={}",
+            total_sprites,
+            width,
+            height,
+            layers,
+            pattern_x,
+            pattern_y,
+            pattern_z,
+            frames,
+        );
+    }
 
     let mut sprite_ids = Vec::with_capacity(total_sprites as usize);
     for _ in 0..total_sprites {

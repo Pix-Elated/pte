@@ -50,6 +50,7 @@ pub fn remove_empty_tiles(state: &mut EditorState) -> CleanupResult {
         }
     }
 
+    state.cache_dirty = true;
     CleanupResult {
         removed_count: removed,
         description: format!("Removed {} empty tiles", removed),
@@ -78,6 +79,7 @@ pub fn remove_corpses(state: &mut EditorState, corpse_ids: &[u16]) -> CleanupRes
         }
     }
 
+    state.cache_dirty = true;
     CleanupResult {
         removed_count: removed,
         description: format!("Removed {} corpse items", removed),
@@ -104,6 +106,7 @@ pub fn remove_duplicate_items(state: &mut EditorState) -> CleanupResult {
         }
     }
 
+    state.cache_dirty = true;
     CleanupResult {
         removed_count: removed,
         description: format!("Removed {} duplicate items", removed),
@@ -133,6 +136,7 @@ pub fn clear_orphan_house_refs(state: &mut EditorState) -> CleanupResult {
         }
     }
 
+    state.cache_dirty = true;
     CleanupResult {
         removed_count: cleared,
         description: format!("Cleared {} orphaned house references", cleared),

@@ -46,9 +46,14 @@ pub fn parse_spr_bytes(data: &[u8]) -> Result<SprFile> {
             (count, false)
         };
 
+    // Detect BGRA (4 bytes per pixel) vs BGR (3 bytes per pixel).
+    // Custom OTClient forks (e.g. Ravendawn) use BGRA with specific signatures.
+    let bytes_per_pixel: usize = if signature == 0x55555556 { 4 } else { 3 };
+
     tracing::info!(
         sprite_count,
         extended,
+        bytes_per_pixel,
         signature = format!("{:#010X}", signature),
         "Parsing SPR"
     );
@@ -77,7 +82,7 @@ pub fn parse_spr_bytes(data: &[u8]) -> Result<SprFile> {
             continue;
         }
 
-        match decode_sprite(&data[offset as usize..]) {
+        match decode_sprite(&data[offset as usize..], bytes_per_pixel) {
             Ok(sprite) => sprites.push(sprite),
             Err(e) => {
                 tracing::warn!("Sprite {} decode error: {e:#}, using blank", i + 1);
@@ -94,7 +99,8 @@ pub fn parse_spr_bytes(data: &[u8]) -> Result<SprFile> {
 }
 
 /// Decode a single sprite from raw bytes at its offset.
-fn decode_sprite(data: &[u8]) -> Result<Sprite> {
+/// `bpp` is bytes per pixel: 3 for standard BGR, 4 for BGRA (Ravendawn).
+fn decode_sprite(data: &[u8], bpp: usize) -> Result<Sprite> {
     if data.len() < 5 {
         bail!("Sprite data too small");
     }
@@ -139,19 +145,25 @@ fn decode_sprite(data: &[u8]) -> Result<Sprite> {
                 break;
             }
 
-            // Read BGRA (or RGB depending on version, but typically BGRA in SPR)
-            let mut bgra = [0u8; 4];
-            // SPR stores RGB (3 bytes per pixel), not BGRA
-            if rle.read_exact(&mut bgra[0..3]).is_err() {
+            let mut buf = [0u8; 4];
+            if rle.read_exact(&mut buf[0..bpp]).is_err() {
                 break;
             }
 
             let byte_idx = pixel_idx * 4;
-            // BGR → RGBA
-            pixels[byte_idx] = bgra[2]; // R
-            pixels[byte_idx + 1] = bgra[1]; // G
-            pixels[byte_idx + 2] = bgra[0]; // B
-            pixels[byte_idx + 3] = 0xFF; // A = opaque
+            if bpp == 4 {
+                // Extended format (Ravendawn): bytes are already RGBA
+                pixels[byte_idx] = buf[0]; // R
+                pixels[byte_idx + 1] = buf[1]; // G
+                pixels[byte_idx + 2] = buf[2]; // B
+                pixels[byte_idx + 3] = buf[3]; // A
+            } else {
+                // Standard format: BGR → RGBA
+                pixels[byte_idx] = buf[2]; // R
+                pixels[byte_idx + 1] = buf[1]; // G
+                pixels[byte_idx + 2] = buf[0]; // B
+                pixels[byte_idx + 3] = 0xFF; // A = opaque
+            }
 
             pixel_idx += 1;
         }
