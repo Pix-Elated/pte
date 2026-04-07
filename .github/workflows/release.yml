@@ -18,7 +18,7 @@ env:
 
 jobs:
   build:
-    name: Build & Sign
+    name: Build
     runs-on: windows-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -69,50 +69,15 @@ jobs:
           mkdir -p dist
           cp target/x86_64-pc-windows-msvc/release/pte.exe dist/pte.exe
 
-      # ── Code-sign the main binary ──
-      - name: Sign main executable
-        continue-on-error: true
-        uses: Azure/artifact-signing-action@v1.1.0
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          trusted-signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE }}
-          files-folder: dist
-          files-folder-filter: exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
       # ── Build InnoSetup installer ──
       - name: Build installer
         shell: pwsh
         run: |
-          # ISS references ../target/release/pte.exe — copy signed binary there
           New-Item -ItemType Directory -Force -Path target/release | Out-Null
           Copy-Item dist/pte.exe target/release/pte.exe
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             /DMyAppVersion=${{ steps.meta.outputs.version }} `
             installer\pte-setup.iss
-
-      # ── Code-sign the installer ──
-      - name: Sign installer
-        continue-on-error: true
-        uses: Azure/artifact-signing-action@v1.1.0
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          trusted-signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE }}
-          files-folder: dist
-          files-folder-filter: exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
 
       # ── Create portable ZIP ──
       - name: Create portable archive
@@ -259,8 +224,6 @@ jobs:
           | \`pte-${VERSION}-windows-x64-portable.zip\` | **Portable archive** — exe + license + readme |
 
           ## Verification
-
-          All executables are code-signed with Azure Trusted Signing.
 
           <details>
           <summary>SHA-256 Checksums</summary>

@@ -4,9 +4,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 /// Z-level constants matching Canary `map_const.hpp`.
-/// z=0 is the highest sky floor; higher z = deeper underground.
-pub const MAP_MAX_Z: u8 = 41;
-pub const MAP_SURFACE_Z: u8 = 31;
+/// Standard Tibia: z=0 is highest sky floor, z=7 is ground, z=8-15 underground.
+pub const MAP_MAX_Z: u8 = 15;
+pub const MAP_SURFACE_Z: u8 = 7;
 
 use pte_appearances::LoadedAppearances;
 use pte_assets::{ParsedCatalog, SpriteSheet};
@@ -44,6 +44,12 @@ pub struct LoadedAssets {
     pub map_path: Option<PathBuf>,
     /// Spawns loaded from spawn.xml alongside the map.
     pub spawns: Vec<crate::spawn_xml::Spawn>,
+    /// Chunk directory path (if loaded from chunks).
+    pub chunk_dir: Option<PathBuf>,
+    /// Chunk manifest (if loaded from chunks) — for on-demand loading.
+    pub chunk_manifest_data: Option<pte_otbm::chunk_io::ChunkManifest>,
+    /// Lazy sprite sheet loader (loads sheets on-demand instead of all at startup).
+    pub lazy_loader: Option<pte_assets::LazySheetLoader>,
 }
 
 /// Shared loading progress updated by the background thread.
@@ -458,6 +464,15 @@ pub struct EditorState {
     pub catalog: Option<ParsedCatalog>,
     pub appearances: Option<LoadedAppearances>,
     pub sprite_sheets: HashMap<String, SpriteSheet>,
+    /// Lazy sprite sheet loader — loads sheets on-demand instead of all at startup.
+    pub lazy_sheets: Option<pte_assets::LazySheetLoader>,
+    /// Visual metadata: item ID → visual category string (e.g. "ground/grass", "wall/stone").
+    /// Loaded from visual_classifications.json alongside appearances.
+    pub visual_metadata: HashMap<u32, String>,
+    /// Sorted unique top-level visual categories for the filter dropdown.
+    pub visual_category_groups: Vec<String>,
+    /// Currently selected visual category filter (empty = show all).
+    pub visual_category_filter: String,
 
     // Map
     pub map_data: Option<MapData>,
@@ -512,10 +527,14 @@ pub struct EditorState {
 
     // Sprite textures cached for egui
     pub sprite_textures: HashMap<u32, egui::TextureHandle>,
-    /// LRU access order for texture cache eviction (most recent at back).
-    pub texture_lru: Vec<u32>,
+    /// Generation counter for O(1) LRU texture eviction.
+    pub texture_lru_gen: HashMap<u32, u64>,
+    pub texture_lru_counter: u64,
     /// Maximum number of GPU textures to keep loaded.
     pub texture_cache_limit: usize,
+
+    // Performance: debounce refresh_cache
+    pub last_cache_refresh: std::time::Instant,
 
     /// Anchored position for right-click context menu.
     pub context_menu_pos: Option<egui::Pos2>,
@@ -559,6 +578,7 @@ pub struct EditorState {
     pub find_result_cursor: usize,
 
     pub show_stats_dialog: bool,
+    pub stats_cache: Option<crate::map_stats::MapStatsCache>,
 
     // View toggles
     pub show_items: bool,
@@ -718,8 +738,33 @@ pub struct EditorState {
     pub pending_quick_save: bool,
     pub pending_save_as: bool,
 
+    // Background save state
+    pub map_saving: bool,
+    pub map_saving_message: String,
+    pub save_result_rx: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+
+    // Cached map statistics (avoid recomputing every frame)
+    pub cached_tile_count: usize,
+    pub cached_z_levels: Vec<u8>,
+    /// Per-z-level tile counts, keyed by z.
+    pub cached_z_tile_counts: HashMap<u8, usize>,
+    pub cache_dirty: bool,
+
     // Pending selection nudge from arrow keys
     pub pending_selection_nudge: Option<(i32, i32)>,
+
+    // Chunk-based map system
+    pub chunk_dir: Option<String>,
+    pub chunk_manifest: Option<pte_otbm::chunk_io::ChunkManifest>,
+    pub pending_chunk_dir_load: Option<std::path::PathBuf>,
+
+    // "Load Assets Only" flow — after assets load, switch to SpriteViewer tab
+    pub pending_sprite_viewer_after_load: bool,
+    /// True when loading assets without a map — hides map stages in loading overlay
+    pub loading_assets_only: bool,
+
+    // API-triggered asset loading (the API handler only has &mut EditorState, not &mut App)
+    pub pending_api_asset_load: Option<std::path::PathBuf>,
 }
 
 impl EditorState {
@@ -747,6 +792,10 @@ impl EditorState {
             catalog: None,
             appearances: None,
             sprite_sheets: HashMap::new(),
+            lazy_sheets: None,
+            visual_metadata: HashMap::new(),
+            visual_category_groups: Vec::new(),
+            visual_category_filter: String::new(),
             map_data: None,
             map_path: None,
             map_loading: false,
@@ -774,8 +823,10 @@ impl EditorState {
             stroke: StrokeState::default(),
             hover_tile: None,
             sprite_textures: HashMap::new(),
-            texture_lru: Vec::new(),
+            texture_lru_gen: HashMap::new(),
+            texture_lru_counter: 0,
             texture_cache_limit: 8192,
+            last_cache_refresh: std::time::Instant::now(),
             context_menu_pos: None,
             anim_time: 0.0,
             animate_sprites: true,
@@ -798,6 +849,7 @@ impl EditorState {
             find_results: Vec::new(),
             find_result_cursor: 0,
             show_stats_dialog: false,
+            stats_cache: None,
             show_items: true,
             show_ground: true,
             show_creatures: true,
@@ -882,7 +934,20 @@ impl EditorState {
             import_offset_y: 0,
             pending_quick_save: false,
             pending_save_as: false,
+            map_saving: false,
+            map_saving_message: String::new(),
+            save_result_rx: None,
+            cached_tile_count: 0,
+            cached_z_levels: Vec::new(),
+            cached_z_tile_counts: HashMap::new(),
+            cache_dirty: true,
             pending_selection_nudge: None,
+            chunk_dir: None,
+            chunk_manifest: None,
+            pending_chunk_dir_load: None,
+            pending_sprite_viewer_after_load: false,
+            loading_assets_only: false,
+            pending_api_asset_load: None,
         }
     }
 
@@ -902,6 +967,8 @@ impl EditorState {
             self.undo_stack.remove(0);
             self.undo_cursor = self.undo_stack.len();
         }
+
+        self.cache_dirty = true;
     }
 
     /// Accumulate an undo action into the current stroke (batches during drag).
@@ -955,6 +1022,7 @@ impl EditorState {
                 }
             }
         }
+        self.cache_dirty = true;
     }
 
     /// Redo the last undone action.
@@ -971,6 +1039,7 @@ impl EditorState {
                 }
             }
         }
+        self.cache_dirty = true;
         self.undo_cursor += 1;
     }
 
@@ -989,14 +1058,39 @@ impl EditorState {
     /// Evict least-recently-used textures when over the cache limit.
     /// Call periodically (e.g. once per frame or after bulk loads).
     pub fn evict_textures(&mut self) {
-        while self.sprite_textures.len() > self.texture_cache_limit {
-            if let Some(oldest_id) = self.texture_lru.first().copied() {
-                self.texture_lru.remove(0);
-                self.sprite_textures.remove(&oldest_id);
-            } else {
-                break;
-            }
+        if self.sprite_textures.len() <= self.texture_cache_limit { return; }
+        let to_remove = self.sprite_textures.len() - self.texture_cache_limit;
+        let mut entries: Vec<(u32, u64)> = self.texture_lru_gen.iter().map(|(&k, &v)| (k, v)).collect();
+        entries.sort_by_key(|&(_, gen)| gen);
+        for (id, _) in entries.into_iter().take(to_remove) {
+            self.sprite_textures.remove(&id);
+            self.texture_lru_gen.remove(&id);
         }
+    }
+
+    /// Recompute cached tile count, z-levels, and per-z counts from map_data.
+    /// Only call when `cache_dirty` is true. Debounced to at most once per 200ms.
+    pub fn refresh_cache(&mut self) {
+        if !self.cache_dirty {
+            return;
+        }
+        if self.last_cache_refresh.elapsed() < std::time::Duration::from_millis(200) {
+            return;
+        }
+        if let Some(ref map) = self.map_data {
+            self.cached_tile_count = map.tile_count();
+            self.cached_z_levels = map.occupied_z_levels();
+            self.cached_z_tile_counts.clear();
+            for (key, chunk) in &map.chunks {
+                *self.cached_z_tile_counts.entry(key.z).or_default() += chunk.len();
+            }
+        } else {
+            self.cached_tile_count = 0;
+            self.cached_z_levels.clear();
+            self.cached_z_tile_counts.clear();
+        }
+        self.last_cache_refresh = std::time::Instant::now();
+        self.cache_dirty = false;
     }
 
     /// Detect z-level range from the loaded map.
