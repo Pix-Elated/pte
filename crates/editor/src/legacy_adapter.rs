@@ -152,10 +152,13 @@ fn dat_entry_to_appearance(entry: &DatEntry) -> Appearance {
     let layout = &entry.sprite_layout;
 
     // Build SpriteInfo
-    // In legacy DAT: total = w * h * layers * px * py * pz * frames
-    // In CIP protobuf: pattern_width/height incorporates the tile grid dimensions.
-    // The sprite index formula uses pattern_width * pattern_height * pattern_depth * layers.
-    // For a 2x2 tile object with px=1: protobuf pattern_width = w * px = 2.
+    // Legacy DAT sprite index: ((frame*pz+z)*py+y)*px+x)*layers+layer)*h+ty)*w+tx
+    // Total = w * h * layers * px * py * pz * frames
+    //
+    // In protobuf, pattern_width/height encode ALL indexing dimensions.
+    // A legacy 2x2 item with px=1 has 4 sprites (2w*2h*1px*1py = 4).
+    // We encode: pattern_width = w * px, pattern_height = h * py
+    // so that total = pw * ph * pd * layers * frames = correct count.
     let proto_pw = layout.width as u32 * layout.pattern_x as u32;
     let proto_ph = layout.height as u32 * layout.pattern_y as u32;
     let sprite_info = SpriteInfo {

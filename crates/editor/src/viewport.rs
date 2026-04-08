@@ -732,24 +732,28 @@ fn handle_viewport_input(
         state.camera.center_y -= delta.y as f64 / tile_px as f64;
     }
 
-    // Zoom with scroll wheel — smooth logarithmic zoom towards cursor
+    // Zoom with scroll wheel — zoom towards cursor position
     let scroll = response.ctx.input(|i| i.smooth_scroll_delta.y);
     let ctrl_held = response.ctx.input(|i| i.modifiers.ctrl);
     if scroll != 0.0 && response.hovered() {
-        // Store world position under cursor before zoom change
         if let Some(hover_pos) = response.hover_pos() {
+            // World position under cursor BEFORE zoom
             let (wx_before, wy_before) = screen_to_world(hover_pos.x, hover_pos.y);
+
+            // Apply zoom
             state.camera.zoom_by_scroll_fine(scroll, ctrl_held);
-            // Use zoom_target to compute the final camera offset
-            // (animate_zoom will interpolate there smoothly)
-            let target_tile_px = 32.0 * state.camera.zoom_target;
+
+            // Recompute world position under cursor AFTER zoom (new scale)
+            let new_tile_px = 32.0 * state.camera.zoom as f32;
             let rect = response.rect;
-            let dx_screen = hover_pos.x - (rect.min.x + rect.width() / 2.0);
-            let dy_screen = hover_pos.y - (rect.min.y + rect.height() / 2.0);
-            let new_wx = state.camera.center_x + dx_screen as f64 / target_tile_px as f64;
-            let new_wy = state.camera.center_y + dy_screen as f64 / target_tile_px as f64;
-            state.camera.center_x += wx_before - new_wx;
-            state.camera.center_y += wy_before - new_wy;
+            let screen_cx = rect.min.x + rect.width() / 2.0;
+            let screen_cy = rect.min.y + rect.height() / 2.0;
+            let wx_after = state.camera.center_x + (hover_pos.x - screen_cx) as f64 / new_tile_px as f64;
+            let wy_after = state.camera.center_y + (hover_pos.y - screen_cy) as f64 / new_tile_px as f64;
+
+            // Adjust camera so the world point stays pinned under cursor
+            state.camera.center_x += wx_before - wx_after;
+            state.camera.center_y += wy_before - wy_after;
         } else {
             state.camera.zoom_by_scroll_fine(scroll, ctrl_held);
         }

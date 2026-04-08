@@ -8,6 +8,7 @@ mod api_server;
 mod app;
 mod asset_scanner;
 mod brush_palette;
+pub mod chunk_cache;
 mod brushes;
 mod clipboard;
 mod context_menu;

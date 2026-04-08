@@ -476,6 +476,8 @@ pub struct EditorState {
 
     // Map
     pub map_data: Option<MapData>,
+    /// Chunk cache for viewport-driven lazy loading (None for single-file maps).
+    pub chunk_cache: Option<crate::chunk_cache::ChunkCache>,
     pub map_path: Option<PathBuf>,
     /// True while a standalone map load is in progress.
     pub map_loading: bool,
@@ -797,6 +799,7 @@ impl EditorState {
             visual_category_groups: Vec::new(),
             visual_category_filter: String::new(),
             map_data: None,
+            chunk_cache: None,
             map_path: None,
             map_loading: false,
             map_loading_message: String::new(),

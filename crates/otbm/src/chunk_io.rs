@@ -78,12 +78,20 @@ pub struct ManifestChunkEntry {
 /// Reads `manifest.json` for metadata, then loads each chunk OTBM file.
 /// All tiles merge into a single MapData.
 pub fn load_chunk_dir(dir: &Path) -> anyhow::Result<MapData> {
+    load_chunk_dir_with_progress(dir, |_, _| {})
+}
+
+/// Load a chunk directory with a progress callback.
+/// `on_progress(done, total)` is called after each batch of chunks is parsed.
+pub fn load_chunk_dir_with_progress(
+    dir: &Path,
+    on_progress: impl Fn(usize, usize) + Send + Sync,
+) -> anyhow::Result<MapData> {
     let manifest_path = dir.join("manifest.json");
     let manifest: ChunkManifest = if manifest_path.exists() {
         let data = std::fs::read_to_string(&manifest_path)?;
         serde_json::from_str(&data)?
     } else {
-        // No manifest — scan directory for .otbm files
         return load_chunk_dir_no_manifest(dir);
     };
 
@@ -97,32 +105,20 @@ pub fn load_chunk_dir(dir: &Path) -> anyhow::Result<MapData> {
     map.item_major_version = 3;
     map.item_minor_version = 56;
 
-    // Load towns from manifest
     for t in &manifest.towns {
         map.towns.push(Town {
             id: t.id,
             name: t.name.clone(),
-            position: Position {
-                x: t.x,
-                y: t.y,
-                z: t.z,
-            },
+            position: Position { x: t.x, y: t.y, z: t.z },
         });
     }
-
-    // Load waypoints from manifest
     for wp in &manifest.waypoints {
         map.waypoints.push(Waypoint {
             name: wp.name.clone(),
-            position: Position {
-                x: wp.x,
-                y: wp.y,
-                z: wp.z,
-            },
+            position: Position { x: wp.x, y: wp.y, z: wp.z },
         });
     }
 
-    // Load all chunk OTBMs in parallel, then merge
     let chunk_paths: Vec<_> = manifest.chunks.iter()
         .map(|entry| dir.join(&entry.path))
         .filter(|p| p.exists())
@@ -131,14 +127,23 @@ pub fn load_chunk_dir(dir: &Path) -> anyhow::Result<MapData> {
     let total = chunk_paths.len();
     tracing::info!("Loading {} chunks in parallel from {}...", total, dir.display());
 
+    // Parse in parallel with atomic progress counter
+    let counter = std::sync::atomic::AtomicUsize::new(0);
     let chunk_maps: Vec<_> = chunk_paths.par_iter()
         .filter_map(|chunk_path| {
             let data = std::fs::read(chunk_path).ok()?;
-            crate::reader::parse_otbm_bytes(&data).ok()
+            let result = crate::reader::parse_otbm_bytes(&data).ok();
+            let done = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if done % 10 == 0 || done == total {
+                on_progress(done, total);
+            }
+            result
         })
         .collect();
 
-    // Merge all chunk maps into the main map (sequential — HashMap merge)
+    on_progress(total, total); // ensure 100%
+
+    // Merge
     let mut loaded = 0;
     for chunk_map in chunk_maps {
         for (key, chunk_tiles) in chunk_map.chunks {
@@ -150,12 +155,7 @@ pub fn load_chunk_dir(dir: &Path) -> anyhow::Result<MapData> {
         loaded += 1;
     }
 
-    tracing::info!(
-        "Loaded {} chunks from {}, {} tiles total",
-        loaded,
-        dir.display(),
-        map.tile_count()
-    );
+    tracing::info!("Loaded {} chunks, {} tiles total", loaded, map.tile_count());
     Ok(map)
 }
 

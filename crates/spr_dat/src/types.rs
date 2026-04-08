@@ -91,7 +91,7 @@ pub enum DatCategory {
 }
 
 /// Sprite layout dimensions from DAT.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SpriteLayout {
     pub width: u8,
     pub height: u8,

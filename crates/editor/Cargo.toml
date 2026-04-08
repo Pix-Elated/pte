@@ -11,6 +11,14 @@ path = "src/main.rs"
 name = "pte-convert"
 path = "src/convert_cli.rs"
 
+[[bin]]
+name = "pte-classify"
+path = "src/classify_cli.rs"
+
+[[bin]]
+name = "pte-generate"
+path = "src/generate_cli.rs"
+
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true

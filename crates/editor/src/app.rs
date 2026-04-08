@@ -261,6 +261,8 @@ impl MapEditorApp {
             }
         }
 
+        // Chunk cache disabled — all chunks loaded upfront via load_chunk_dir
+
         // Save actions (deferred from menu/hotkey to avoid borrow issues)
         if self.state.pending_quick_save {
             self.state.pending_quick_save = false;
@@ -423,95 +425,35 @@ impl MapEditorApp {
                 }
                 (None, None, Vec::new())
             } else if let Some(ref cd) = chunk_dir {
-                // Chunk directory loading with parallel parsing
+                // Chunk directory — load ALL chunks in parallel
                 {
                     let mut p = progress.lock().unwrap();
                     p.progress = 0.62;
-                    p.message = "Reading chunk manifest…".to_string();
+                    p.message = "Loading all chunks (parallel)…".to_string();
                     p.stage = crate::state::LoadingStage::MapParse;
                 }
 
                 let manifest_path = cd.join("manifest.json");
-                let manifest_data = std::fs::read_to_string(&manifest_path).ok();
-                let manifest: Option<pte_otbm::chunk_io::ChunkManifest> = manifest_data
-                    .as_ref()
-                    .and_then(|d| serde_json::from_str(d).ok());
-
-                if let Some(manifest) = manifest {
-                    let mut map = pte_otbm::MapData::new();
-                    map.width = manifest.world_width;
-                    map.height = manifest.world_height;
-                    map.description = manifest.description.clone();
-                    map.spawn_file = manifest.spawn_file.clone();
-                    map.house_file = manifest.house_file.clone();
-                    map.version = 3;
-                    map.item_major_version = 3;
-                    map.item_minor_version = 56;
-                    for t in &manifest.towns {
-                        map.towns.push(pte_otbm::Town { id: t.id, name: t.name.clone(), position: pte_otbm::Position { x: t.x, y: t.y, z: t.z } });
+                let prog_chunks = progress.clone();
+                match pte_otbm::chunk_io::load_chunk_dir_with_progress(cd, move |done, total| {
+                    if let Ok(mut p) = prog_chunks.lock() {
+                        let pct = 0.62 + 0.30 * (done as f32 / total.max(1) as f32);
+                        p.progress = pct;
+                        p.message = format!("Parsing chunks… {}/{}", done, total);
                     }
-                    for wp in &manifest.waypoints {
-                        map.waypoints.push(pte_otbm::Waypoint { name: wp.name.clone(), position: pte_otbm::Position { x: wp.x, y: wp.y, z: wp.z } });
-                    }
-
-                    // Load all chunks with parallel parsing
-                    use std::sync::atomic::{AtomicUsize, Ordering};
-                    use rayon::prelude::*;
-
-                    let chunk_paths: Vec<std::path::PathBuf> = manifest.chunks.iter()
-                        .filter_map(|entry| { let p = cd.join(&entry.path); if p.exists() { Some(p) } else { None } })
-                        .collect();
-                    let total_ch = chunk_paths.len();
-                    let parse_counter = std::sync::Arc::new(AtomicUsize::new(0));
-                    let prog_par = progress.clone();
-                    let counter = parse_counter.clone();
-
-                    let chunk_maps: Vec<pte_otbm::MapData> = chunk_paths.par_iter()
-                        .filter_map(|cp| {
-                            let data = std::fs::read(cp).ok()?;
-                            let result = pte_otbm::parse_otbm_bytes(&data).ok();
-                            let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                            if done % 100 == 0 || done == total_ch {
-                                if let Ok(mut p) = prog_par.lock() {
-                                    let pct = 0.62 + 0.20 * (done as f32 / total_ch.max(1) as f32);
-                                    p.progress = pct;
-                                    p.message = format!("Parsing chunks… {}/{}", done, total_ch);
-                                }
-                            }
-                            result
-                        })
-                        .collect();
-
-                    // Merge
-                    let merge_total = chunk_maps.len();
-                    {
-                        let mut p = progress.lock().unwrap();
-                        p.progress = 0.84;
-                        p.message = format!("Merging {} chunks…", merge_total);
-                    }
-                    // Fast merge: move entire chunk HashMaps (no per-tile iteration)
-                    map.chunks.reserve(merge_total * 4); // pre-allocate
-                    let mut merged = 0usize;
-                    for cm in chunk_maps {
-                        for (key, tiles) in cm.chunks {
-                            map.chunks.insert(key, tiles); // move whole HashMap
+                }) {
+                    Ok(map) => {
+                        if let Ok(mut p) = progress.lock() {
+                            p.progress = 0.95;
+                            p.message = format!("Loaded {} tiles from {} chunks", map.tile_count(), map.chunks.len());
                         }
-                        merged += 1;
-                        if merged % 500 == 0 || merged == merge_total {
-                            let pct = 0.84 + 0.12 * (merged as f32 / merge_total.max(1) as f32);
-                            if let Ok(mut p) = progress.lock() {
-                                p.progress = pct;
-                                p.message = format!("Merging chunks… {}/{}", merged, merge_total);
-                            }
-                        }
+                        tracing::info!("Chunk dir: loaded {} tiles", map.tile_count());
+                        (Some(map), Some(manifest_path), Vec::new())
                     }
-
-                    tracing::info!("Loaded {} of {} chunks ({} tiles)",
-                        total_ch, manifest.chunks.len(), map.tile_count());
-                    (Some(map), Some(manifest_path), Vec::new())
-                } else {
-                    tracing::error!("Failed to parse chunk manifest");
-                    (None, None, Vec::new())
+                    Err(e) => {
+                        tracing::error!("Failed to load chunk dir: {e}");
+                        (None, None, Vec::new())
+                    }
                 }
             } else if let Some(ref mp) = map_path {
                 {
@@ -993,139 +935,51 @@ impl MapEditorApp {
         self.state.map_loading = true;
         self.state.map_loading_message = "Reading chunk manifest…".to_string();
         self.state.loader.map_progress = Some(progress.clone());
+        self.state.chunk_dir = Some(dir.to_string_lossy().to_string());
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.state.loader.map_rx = Some(rx);
 
-        // Store chunk dir for later saves
-        self.state.chunk_dir = Some(dir.to_string_lossy().to_string());
-
         let prog = progress.clone();
         std::thread::spawn(move || {
-            // Read manifest
+            if let Ok(mut p) = prog.lock() {
+                p.message = "Loading all chunks (parallel)…".to_string();
+            }
+
             let manifest_path = dir.join("manifest.json");
-            let manifest_data = match std::fs::read_to_string(&manifest_path) {
-                Ok(d) => d,
-                Err(e) => {
-                    let _ = tx.send(Err(format!("Failed to read manifest: {e}")));
-                    return;
+            let prog_chunks = prog.clone();
+            match pte_otbm::chunk_io::load_chunk_dir_with_progress(&dir, move |done, total| {
+                if let Ok(mut p) = prog_chunks.lock() {
+                    let pct = 0.1 + 0.8 * (done as f32 / total.max(1) as f32);
+                    p.progress = pct;
+                    p.message = format!("Parsing chunks… {}/{}", done, total);
                 }
-            };
-            let manifest: pte_otbm::chunk_io::ChunkManifest = match serde_json::from_str(&manifest_data) {
-                Ok(m) => m,
-                Err(e) => {
-                    let _ = tx.send(Err(format!("Failed to parse manifest: {e}")));
-                    return;
-                }
-            };
+            }) {
+                Ok(map) => {
+                    // Load spawns
+                    let spawn_file = if map.spawn_file.is_empty() {
+                        "xtrails-monster.xml".to_string()
+                    } else {
+                        map.spawn_file.clone()
+                    };
+                    let spawn_path = dir.join(&spawn_file);
+                    let spawns = if spawn_path.exists() {
+                        crate::spawn_xml::read_spawns(&spawn_path).unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
 
-            let total_chunks = manifest.chunks.len();
-            if let Ok(mut p) = prog.lock() {
-                p.message = format!("Loading {} chunks…", total_chunks);
-            }
-
-            // Build map from manifest metadata
-            let mut map = pte_otbm::MapData::new();
-            map.width = manifest.world_width;
-            map.height = manifest.world_height;
-            map.description = manifest.description.clone();
-            map.spawn_file = manifest.spawn_file.clone();
-            map.house_file = manifest.house_file.clone();
-            map.version = 3;
-            map.item_major_version = 3;
-            map.item_minor_version = 56;
-
-            for t in &manifest.towns {
-                map.towns.push(pte_otbm::Town {
-                    id: t.id,
-                    name: t.name.clone(),
-                    position: pte_otbm::Position { x: t.x, y: t.y, z: t.z },
-                });
-            }
-            for wp in &manifest.waypoints {
-                map.waypoints.push(pte_otbm::Waypoint {
-                    name: wp.name.clone(),
-                    position: pte_otbm::Position { x: wp.x, y: wp.y, z: wp.z },
-                });
-            }
-
-            // Parallel chunk loading via rayon
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            use rayon::prelude::*;
-
-            let chunk_paths: Vec<std::path::PathBuf> = manifest.chunks.iter()
-                .filter_map(|entry| {
-                    let p = dir.join(&entry.path);
-                    if p.exists() { Some(p) } else { None }
-                })
-                .collect();
-
-            let parse_counter = std::sync::Arc::new(AtomicUsize::new(0));
-            let prog_par = prog.clone();
-            let total = chunk_paths.len();
-
-            if let Ok(mut p) = prog.lock() {
-                p.message = format!("Parsing {} chunks (parallel)…", total);
-            }
-
-            // Parse all chunks in parallel across CPU cores
-            let counter = parse_counter.clone();
-            let chunk_maps: Vec<pte_otbm::MapData> = chunk_paths.par_iter()
-                .filter_map(|chunk_path| {
-                    let data = std::fs::read(chunk_path).ok()?;
-                    let result = pte_otbm::parse_otbm_bytes(&data).ok();
-                    let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                    if done % 100 == 0 || done == total {
-                        if let Ok(mut p) = prog_par.lock() {
-                            let pct = done as f32 / total.max(1) as f32;
-                            p.progress = pct * 0.8;
-                            p.message = format!("Parsing chunks… {}/{} ({:.0}%)", done, total, pct * 100.0);
-                        }
-                    }
-                    result
-                })
-                .collect();
-
-            // Sequential merge with progress
-            let merge_total = chunk_maps.len();
-            let mut merged = 0usize;
-            for chunk_map in chunk_maps {
-                for (key, chunk_tiles) in chunk_map.chunks {
-                    let entry = map.chunks.entry(key).or_default();
-                    for (local, tile) in chunk_tiles {
-                        entry.insert(local, tile);
-                    }
-                }
-                merged += 1;
-                if merged % 100 == 0 || merged == merge_total {
-                    let pct = 0.8 + 0.15 * (merged as f32 / merge_total.max(1) as f32);
                     if let Ok(mut p) = prog.lock() {
-                        p.progress = pct;
-                        p.message = format!("Merging chunks… {}/{}", merged, merge_total);
+                        p.progress = 1.0;
+                        p.message = format!("Loaded {} tiles", map.tile_count());
                     }
+
+                    let _ = tx.send(Ok((map, manifest_path, spawns)));
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("Failed to load chunks: {e}")));
                 }
             }
-            let loaded = parse_counter.load(Ordering::Relaxed);
-
-            // Load spawns
-            let spawn_file = if map.spawn_file.is_empty() {
-                "xtrails-monster.xml".to_string()
-            } else {
-                map.spawn_file.clone()
-            };
-            let spawn_path = dir.join(&spawn_file);
-            let spawns = if spawn_path.exists() {
-                crate::spawn_xml::read_spawns(&spawn_path).unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-
-            if let Ok(mut p) = prog.lock() {
-                p.progress = 1.0;
-                p.message = format!("Loaded {} chunks, {} tiles", loaded, map.tile_count());
-            }
-
-            let _ = tx.send(Ok((map, manifest_path, spawns)));
         });
     }
 
@@ -1990,30 +1844,8 @@ impl MapEditorApp {
                 crate::nav_history::go_forward(&mut self.state);
             }
 
-            // Arrow key selection nudge (when selection exists, no modifiers)
-            if self.state.selection.is_some() && !i.modifiers.alt && !i.modifiers.ctrl {
-                let mut dx = 0i32;
-                let mut dy = 0i32;
-                if i.key_pressed(egui::Key::ArrowLeft) {
-                    dx = -1;
-                }
-                if i.key_pressed(egui::Key::ArrowRight) {
-                    dx = 1;
-                }
-                if i.key_pressed(egui::Key::ArrowUp) {
-                    dy = -1;
-                }
-                if i.key_pressed(egui::Key::ArrowDown) {
-                    dy = 1;
-                }
-
-                if dx != 0 || dy != 0 {
-                    self.state.pending_selection_nudge = Some((dx, dy));
-                }
-            }
-
-            // Arrow key camera pan (when no selection, no modifiers)
-            if self.state.selection.is_none() && !i.modifiers.alt && !i.modifiers.ctrl {
+            // Arrow key camera pan (always, no modifiers)
+            if !i.modifiers.alt && !i.modifiers.ctrl {
                 let pan_speed = 4.0 / self.state.camera.zoom as f64;
                 if i.key_pressed(egui::Key::ArrowLeft) {
                     self.state.camera.center_x -= pan_speed;
