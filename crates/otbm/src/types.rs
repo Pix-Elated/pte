@@ -320,13 +320,20 @@ impl MapData {
 
         let mut tiles = Vec::new();
         for cx in cx1..=cx2 {
+            let is_edge_x = cx == cx1 || cx == cx2;
             for cy in cy1..=cy2 {
                 let key = ChunkKey { cx, cy, z };
                 if let Some(chunk) = self.chunks.get(&key) {
-                    for tile in chunk.values() {
-                        if tile.x >= x1 && tile.x <= x2 && tile.y >= y1 && tile.y <= y2 {
-                            tiles.push(tile);
+                    if is_edge_x || cy == cy1 || cy == cy2 {
+                        // Edge chunk — filter tiles at boundaries
+                        for tile in chunk.values() {
+                            if tile.x >= x1 && tile.x <= x2 && tile.y >= y1 && tile.y <= y2 {
+                                tiles.push(tile);
+                            }
                         }
+                    } else {
+                        // Interior chunk — all tiles are within bounds
+                        tiles.extend(chunk.values());
                     }
                 }
             }
@@ -341,10 +348,14 @@ impl MapData {
 
     /// Returns the set of z-levels that actually contain tiles, sorted ascending.
     pub fn occupied_z_levels(&self) -> Vec<u8> {
-        let mut zs: Vec<u8> = self.chunks.keys().map(|k| k.z).collect();
-        zs.sort_unstable();
-        zs.dedup();
-        zs
+        let mut present = [false; 256];
+        for key in self.chunks.keys() {
+            present[key.z as usize] = true;
+        }
+        present.iter().enumerate()
+            .filter(|(_, &p)| p)
+            .map(|(i, _)| i as u8)
+            .collect()
     }
 
     /// Returns (min_z, max_z) of tiles present in the map, or None if empty.
@@ -417,5 +428,24 @@ impl MapData {
         let mut v: Vec<u32> = used.into_iter().collect();
         v.sort_unstable();
         v
+    }
+
+    /// Merge all tiles from another MapData into self.
+    pub fn merge_chunk(&mut self, other: MapData) {
+        for (key, tiles) in other.chunks {
+            self.chunks.entry(key).or_default().extend(tiles);
+        }
+    }
+
+    /// Evict all internal chunks belonging to a 256x256 file chunk area.
+    pub fn evict_file_chunk(&mut self, z: u8, base_x: u16, base_y: u16) {
+        let cx_start = base_x as i32 / CHUNK_SIZE;
+        let cy_start = base_y as i32 / CHUNK_SIZE;
+        // 256 / 64 = 4 internal chunks per dimension
+        for cx in cx_start..cx_start + 4 {
+            for cy in cy_start..cy_start + 4 {
+                self.chunks.remove(&ChunkKey { cx, cy, z });
+            }
+        }
     }
 }

@@ -14,6 +14,18 @@ use egui::Color32;
 
 // ── Data model ──
 
+/// Asset format for a discovered project.
+#[derive(Debug, Clone)]
+pub enum ProjectType {
+    /// Modern CIP: catalog-content.json + .cip sheets + appearances.dat
+    Protobuf,
+    /// Legacy: Tibia.dat + Tibia.spr
+    Legacy {
+        dat_path: PathBuf,
+        spr_path: PathBuf,
+    },
+}
+
 /// A discovered OT project with assets and maps grouped together.
 #[derive(Debug, Clone)]
 pub struct DiscoveredProject {
@@ -36,8 +48,12 @@ pub struct DiscoveredProject {
     pub event_maps: Vec<MapEntry>,
     /// Other .otbm files that don't fit the above categories
     pub other_maps: Vec<MapEntry>,
+    /// Chunk directory (world/chunks/ with manifest.json) — preferred over main_map
+    pub chunk_dir: Option<PathBuf>,
     /// Whether legacy .spr/.dat files were found nearby
     pub has_legacy_sprites: bool,
+    /// Asset format (protobuf catalog vs legacy .dat/.spr)
+    pub project_type: ProjectType,
     /// mapName from config.lua (if found)
     pub config_map_name: Option<String>,
 }
@@ -52,12 +68,14 @@ pub struct MapEntry {
 
 impl DiscoveredProject {
     pub fn total_map_count(&self) -> usize {
+        let chunk_count = if self.chunk_dir.is_some() { 1 } else { 0 };
         self.main_map.iter().count()
             + self.custom_maps.len()
             + self.quest_maps.len()
             + self.world_change_maps.len()
             + self.event_maps.len()
             + self.other_maps.len()
+            + chunk_count
     }
 }
 
@@ -80,8 +98,11 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
     let mut catalogs: Vec<(PathBuf, String, u64)> = Vec::new();
     let mut config_map_names: BTreeMap<PathBuf, String> = BTreeMap::new();
     let mut world_dirs: Vec<PathBuf> = Vec::new();
+    // Track legacy .dat/.spr files: directory → (dat_path, spr_path)
+    let mut legacy_dat: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
+    let mut legacy_spr: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
 
-    // Phase 1: Find catalog-content.json, config.lua, and .otbm files
+    // Phase 1: Find catalog-content.json, config.lua, .otbm, and legacy .dat/.spr files
     find_files_recursive(root, 0, max_depth, &mut |path, size| {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let name_lower = name.to_lowercase();
@@ -101,6 +122,16 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
                     let dir = path.parent().unwrap_or(path).to_path_buf();
                     config_map_names.insert(dir, map_name);
                 }
+            }
+        } else if name_lower.ends_with(".dat") && size > 12 {
+            // Potential legacy Tibia.dat (must be > 12 bytes for header)
+            if let Some(dir) = path.parent() {
+                legacy_dat.insert(dir.to_path_buf(), path.to_path_buf());
+            }
+        } else if name_lower.ends_with(".spr") && size > 8 {
+            // Potential legacy Tibia.spr (must be > 8 bytes for header)
+            if let Some(dir) = path.parent() {
+                legacy_spr.insert(dir.to_path_buf(), path.to_path_buf());
             }
         } else if name_lower.ends_with(".otbm") && size > 0 {
             // Track directories that contain .otbm files — these are world dirs
@@ -131,10 +162,12 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
     });
 
     tracing::info!(
-        "Phase 1 complete: {} catalog(s), {} config(s), {} world dir(s)",
+        "Phase 1 complete: {} catalog(s), {} config(s), {} world dir(s), {} .dat, {} .spr",
         catalogs.len(),
         config_map_names.len(),
         world_dirs.len(),
+        legacy_dat.len(),
+        legacy_spr.len(),
     );
     for wd in &world_dirs {
         tracing::info!("  discovered world dir: {}", wd.display());
@@ -142,9 +175,69 @@ pub fn scan_directory(root: &Path, max_depth: usize) -> ScanResult {
 
     // Phase 2: For each catalog, find the nearest world/ directory and group maps
     let mut projects = Vec::new();
-    for (catalog_dir, version, _catalog_size) in catalogs {
-        let project = build_project(root, &catalog_dir, &version, &config_map_names, &world_dirs);
+    for (catalog_dir, version, _catalog_size) in &catalogs {
+        let project = build_project(root, catalog_dir, version, &config_map_names, &world_dirs);
         projects.push(project);
+    }
+
+    // Phase 3: For each directory with both .dat AND .spr, create a legacy project
+    // (skip directories already claimed by a catalog-based project)
+    let catalog_dirs: Vec<PathBuf> = catalogs.iter().map(|(d, _, _)| d.clone()).collect();
+    for (dir, dat_path) in &legacy_dat {
+        if let Some(spr_path) = legacy_spr.get(dir) {
+            // Skip if this directory already has a catalog project
+            if catalog_dirs.contains(dir) {
+                continue;
+            }
+            let version = match read_dat_signature(dat_path) {
+                Some(sig) => signature_to_version(sig),
+                None => "unknown".to_string(),
+            };
+            let mut project = DiscoveredProject {
+                catalog_dir: dir.clone(),
+                version,
+                world_dir: None,
+                main_map: None,
+                custom_maps: Vec::new(),
+                quest_maps: Vec::new(),
+                world_change_maps: Vec::new(),
+                event_maps: Vec::new(),
+                other_maps: Vec::new(),
+                chunk_dir: None,
+                has_legacy_sprites: true,
+                project_type: ProjectType::Legacy {
+                    dat_path: dat_path.clone(),
+                    spr_path: spr_path.clone(),
+                },
+                config_map_name: None,
+            };
+
+            // Try to find associated maps for the legacy project
+            let world_dir =
+                find_world_dir(dir, &config_map_names, &world_dirs);
+            if let Some(ref wd) = world_dir {
+                let map_name = find_map_name_for_world(wd, &config_map_names);
+                project.config_map_name = map_name.clone();
+                project.world_dir = Some(wd.clone());
+
+                // Collect .otbm files under world/
+                let mut all_maps: Vec<(PathBuf, u64)> = Vec::new();
+                find_files_recursive(wd, 0, 6, &mut |path, size| {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name.to_lowercase().ends_with(".otbm") {
+                        all_maps.push((path.to_path_buf(), size));
+                    }
+                });
+                categorize_maps(&mut project, wd, &all_maps);
+            }
+
+            tracing::info!(
+                "Legacy project: {} ({} maps)",
+                dir.display(),
+                project.total_map_count()
+            );
+            projects.push(project);
+        }
     }
 
     // Sort by version (numeric-aware)
@@ -175,7 +268,9 @@ fn build_project(
         world_change_maps: Vec::new(),
         event_maps: Vec::new(),
         other_maps: Vec::new(),
+        chunk_dir: None,
         has_legacy_sprites: false,
+        project_type: ProjectType::Protobuf,
         config_map_name: None,
     };
 
@@ -207,18 +302,41 @@ fn build_project(
     project.config_map_name = map_name.clone();
     project.world_dir = Some(world_dir.clone());
 
-    // Collect all .otbm files under world/
+    // Check for chunk directory (world/chunks/manifest.json)
+    let chunks_dir = world_dir.join("chunks");
+    if chunks_dir.join("manifest.json").exists() {
+        tracing::info!("build_project: found chunk directory at {}", chunks_dir.display());
+        project.chunk_dir = Some(chunks_dir.clone());
+    }
+
+    // Collect all .otbm files under world/ (but skip chunk files)
     let mut all_maps: Vec<(PathBuf, u64)> = Vec::new();
     find_files_recursive(&world_dir, 0, 6, &mut |path, size| {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if name.to_lowercase().ends_with(".otbm") {
+            // Skip .otbm files inside the chunks/ directory
+            let path_str = path.to_string_lossy().replace('\\', "/");
+            if path_str.contains("/chunks/") {
+                return;
+            }
             all_maps.push((path.to_path_buf(), size));
         }
     });
 
-    // Categorize maps based on their path relative to world/
+    categorize_maps(&mut project, &world_dir, &all_maps);
+
+    project
+}
+
+/// Categorize discovered .otbm maps into a project's map slots.
+fn categorize_maps(
+    project: &mut DiscoveredProject,
+    world_dir: &Path,
+    all_maps: &[(PathBuf, u64)],
+) {
     for (map_path, size) in all_maps {
-        let rel = map_path.strip_prefix(&world_dir).unwrap_or(&map_path);
+        let size = *size;
+        let rel = map_path.strip_prefix(world_dir).unwrap_or(map_path);
         let rel_str = rel.to_string_lossy().replace('\\', "/");
         let label = rel_str.clone();
 
@@ -230,7 +348,7 @@ fn build_project(
 
         // Is this the main map?
         let stem = map_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let is_main = map_name.as_deref() == Some(stem);
+        let is_main = project.config_map_name.as_deref() == Some(stem);
         // Also treat top-level .otbm files as potential mains
         let is_top_level = rel.parent().is_none_or(|p| p == Path::new(""));
 
@@ -259,8 +377,6 @@ fn build_project(
             project.other_maps.push(entry);
         }
     }
-
-    project
 }
 
 /// Find the world/ directory associated with a catalog dir.
@@ -428,6 +544,25 @@ fn parse_config_map_name(contents: &str) -> Option<String> {
     None
 }
 
+/// Read the first 4 bytes of a .dat file to get the signature.
+fn read_dat_signature(path: &Path) -> Option<u32> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = [0u8; 4];
+    f.read_exact(&mut buf).ok()?;
+    Some(u32::from_le_bytes(buf))
+}
+
+/// Map known DAT signatures to human-readable version strings.
+fn signature_to_version(sig: u32) -> String {
+    match sig {
+        0x439D_5A33 => "8.60".to_string(),
+        0x4E47_6D77 => "9.60".to_string(),
+        0x5741_5102 => "10.98".to_string(),
+        _ => format!("{:#010X}", sig),
+    }
+}
+
 /// Recursively find files, calling handler for each regular file found.
 fn find_files_recursive(
     dir: &Path,
@@ -537,6 +672,8 @@ pub struct ScannerState {
     pub scan_rx: Option<std::sync::mpsc::Receiver<ScanResult>>,
     /// True while a background scan is in progress
     pub scanning: bool,
+    /// Receiver for legacy conversion result
+    pub convert_rx: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
 }
 
 /// Action from the scanner dialog.
@@ -544,12 +681,20 @@ pub struct ScannerState {
 #[allow(clippy::large_enum_variant)]
 pub enum ScannerAction {
     None,
-    /// Load a complete project: assets + main map + custom overlays
+    /// Load a complete project: assets + optional main map + custom overlays
     LoadProject {
         asset_dir: PathBuf,
-        main_map: PathBuf,
+        main_map: Option<PathBuf>,
         custom_maps: Vec<PathBuf>,
         /// Full project info for the map switcher panel
+        project: DiscoveredProject,
+    },
+    /// Load assets only (no map) — opens the sprite viewer after loading.
+    LoadAssetsOnly {
+        asset_dir: PathBuf,
+    },
+    /// Convert a legacy project to protobuf format on disk
+    ConvertLegacy {
         project: DiscoveredProject,
     },
 }
@@ -588,6 +733,8 @@ pub fn show(ctx: &egui::Context, scanner: &mut ScannerState) -> ScannerAction {
         .collapsible(false)
         .open(&mut scanner.open)
         .show(ctx, |ui| {
+            ui.add_space(4.0);
+
             // Scan button + path
             ui.horizontal(|ui| {
                 let scanning = scanner.scanning;
@@ -641,13 +788,15 @@ pub fn show(ctx: &egui::Context, scanner: &mut ScannerState) -> ScannerAction {
             if result.is_empty() {
                 ui.colored_label(
                     theme::WARNING,
-                    "No catalog-content.json files found in this directory tree.",
+                    "No OT asset files found in this directory tree.",
                 );
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new("Make sure the folder contains client asset files.")
-                        .size(11.0)
-                        .color(theme::TEXT_MUTED),
+                    egui::RichText::new(
+                        "Make sure the folder contains catalog-content.json or Tibia.dat/Tibia.spr files.",
+                    )
+                    .size(11.0)
+                    .color(theme::TEXT_MUTED),
                 );
                 return;
             }
@@ -731,6 +880,26 @@ fn show_project_card(
                     Color32::WHITE,
                 );
 
+                // Legacy format badge
+                if matches!(project.project_type, ProjectType::Legacy { .. }) {
+                    ui.add_space(4.0);
+                    let legacy_rect = ui
+                        .allocate_exact_size(egui::vec2(48.0, 22.0), egui::Sense::hover())
+                        .0;
+                    ui.painter().rect_filled(
+                        legacy_rect,
+                        4.0,
+                        Color32::from_rgb(180, 140, 80),
+                    );
+                    ui.painter().text(
+                        legacy_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "Legacy",
+                        egui::FontId::proportional(10.0),
+                        Color32::WHITE,
+                    );
+                }
+
                 ui.add_space(8.0);
 
                 // Info column
@@ -749,7 +918,25 @@ fn show_project_card(
 
                     // Map summary
                     let map_count = project.total_map_count();
-                    let map_label = if let Some(ref main) = project.main_map {
+                    let map_label = if let Some(ref chunk_dir) = project.chunk_dir {
+                        // Count chunk files
+                        let chunk_count = std::fs::read_dir(chunk_dir)
+                            .ok()
+                            .map(|entries| {
+                                entries
+                                    .filter_map(|e| e.ok())
+                                    .filter(|e| e.path().is_dir())
+                                    .flat_map(|d| std::fs::read_dir(d.path()).ok())
+                                    .flatten()
+                                    .filter_map(|e| e.ok())
+                                    .filter(|e| {
+                                        e.path().extension().and_then(|x| x.to_str()) == Some("otbm")
+                                    })
+                                    .count()
+                            })
+                            .unwrap_or(0);
+                        format!("🗺 Chunk directory ({} chunks)", chunk_count)
+                    } else if let Some(ref main) = project.main_map {
                         let stem = main
                             .path
                             .file_stem()
@@ -773,8 +960,9 @@ fn show_project_card(
 
                 // Push button to right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Open button (only if there's a main map)
-                    let can_open = project.main_map.is_some();
+                    // Open button — requires main map OR chunk dir for protobuf, always openable for legacy
+                    let is_legacy = matches!(project.project_type, ProjectType::Legacy { .. });
+                    let can_open = project.main_map.is_some() || project.chunk_dir.is_some() || is_legacy;
                     let btn = egui::Button::new(egui::RichText::new("Open").size(12.0).color(
                         if can_open {
                             Color32::WHITE
@@ -791,15 +979,38 @@ fn show_project_card(
                     .min_size(egui::vec2(64.0, 26.0));
 
                     if ui.add_enabled(can_open, btn).clicked() {
-                        if let Some(ref main) = project.main_map {
-                            action = Some(ScannerAction::LoadProject {
-                                asset_dir: project.catalog_dir.clone(),
-                                main_map: main.path.clone(),
-                                custom_maps: project
-                                    .custom_maps
-                                    .iter()
-                                    .map(|m| m.path.clone())
-                                    .collect(),
+                        action = Some(ScannerAction::LoadProject {
+                            asset_dir: project.catalog_dir.clone(),
+                            main_map: project.main_map.as_ref().map(|m| m.path.clone()),
+                            custom_maps: project
+                                .custom_maps
+                                .iter()
+                                .map(|m| m.path.clone())
+                                .collect(),
+                            project: project.clone(),
+                        });
+                    }
+
+                    // Sprites Only button — loads assets without map
+                    let sprites_btn = egui::Button::new(
+                        egui::RichText::new("Sprites Only").size(11.0)
+                    )
+                    .corner_radius(egui::CornerRadius::same(4))
+                    .min_size(egui::vec2(80.0, 26.0));
+                    if ui.add(sprites_btn).clicked() {
+                        action = Some(ScannerAction::LoadAssetsOnly {
+                            asset_dir: project.catalog_dir.clone(),
+                        });
+                    }
+
+                    // Convert button (legacy projects only)
+                    if is_legacy {
+                        let convert_btn =
+                            egui::Button::new(egui::RichText::new("Convert").size(11.0))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .min_size(egui::vec2(64.0, 26.0));
+                        if ui.add(convert_btn).clicked() {
+                            action = Some(ScannerAction::ConvertLegacy {
                                 project: project.clone(),
                             });
                         }

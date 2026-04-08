@@ -120,6 +120,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
                     &state.sprite_sheets,
                     ui.ctx(),
                     sid,
+                    &mut state.texture_lru_gen,
+                                    &mut state.texture_lru_counter,
                 ) {
                     ui.painter().image(
                         tex.id(),
@@ -198,6 +200,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) -> DetailAction {
                                     &state.sprite_sheets,
                                     ui.ctx(),
                                     sid,
+                                    &mut state.texture_lru_gen,
+                                    &mut state.texture_lru_counter,
                                 ) {
                                     let inner = rect.shrink(2.0);
                                     ui.painter().image(

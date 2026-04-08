@@ -191,9 +191,9 @@ fn run_server(port: u16, cmd_tx: mpsc::Sender<ApiCommand>) {
             break;
         }
 
-        // Wait for UI thread to process (timeout 10s)
+        // Wait for UI thread to process (timeout 120s for large map loads)
         let api_resp = resp_rx
-            .recv_timeout(std::time::Duration::from_secs(10))
+            .recv_timeout(std::time::Duration::from_secs(120))
             .unwrap_or_else(|| ApiResponse::error("Timeout waiting for editor response"));
 
         let json = serde_json::to_string(&api_resp)

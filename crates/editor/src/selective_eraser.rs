@@ -42,6 +42,8 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> bool {
                         &mut state.sprite_textures,
                         &state.sprite_sheets,
                         ctx,
+                        &mut state.texture_lru_gen,
+                        &mut state.texture_lru_counter,
                     );
                     let _ = preview_rect;
 
@@ -95,6 +97,8 @@ pub fn show(ctx: &egui::Context, state: &mut EditorState) -> bool {
                         &mut state.sprite_textures,
                         &state.sprite_sheets,
                         ctx,
+                        &mut state.texture_lru_gen,
+                        &mut state.texture_lru_counter,
                     );
 
                     ui.label(
@@ -162,6 +166,8 @@ fn draw_item_preview(
     textures: &mut std::collections::HashMap<u32, egui::TextureHandle>,
     sheets: &std::collections::HashMap<String, pte_assets::SpriteSheet>,
     ctx: &egui::Context,
+    texture_lru_gen: &mut std::collections::HashMap<u32, u64>,
+    texture_lru_counter: &mut u64,
 ) -> egui::Rect {
     let size = egui::vec2(24.0, 24.0);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
@@ -169,7 +175,7 @@ fn draw_item_preview(
     if let Some(ref apps) = appearances {
         if let Some(appearance) = apps.get(pte_appearances::Category::Object, item_id) {
             if let Some(sid) = crate::viewport::resolve_appearance_sprite(appearance, 0, false, 0) {
-                if let Some(tex) = crate::viewport::get_or_upload(textures, sheets, ctx, sid) {
+                if let Some(tex) = crate::viewport::get_or_upload(textures, sheets, ctx, sid, texture_lru_gen, texture_lru_counter) {
                     ui.painter().image(
                         tex.id(),
                         rect,

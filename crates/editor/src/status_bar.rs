@@ -13,8 +13,8 @@ pub fn show(ui: &mut egui::Ui, state: &EditorState) {
             ui.label(text_style(&format!("{} appearances", apps.total_count())));
         }
 
-        if let Some(ref map) = state.map_data {
-            ui.label(text_style(&format!("{} tiles", map.tile_count())));
+        if state.map_data.is_some() {
+            ui.label(text_style(&format!("{} tiles", state.cached_tile_count)));
         }
 
         ui.label(text_style(state.active_tool.label()));

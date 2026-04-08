@@ -93,6 +93,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                         &state.sprite_sheets,
                         ui.ctx(),
                         look as u32,
+                        &mut state.texture_lru_gen,
+                        &mut state.texture_lru_counter,
                     ) {
                         ui.painter().image(
                             tex.id(),

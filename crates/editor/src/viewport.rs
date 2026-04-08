@@ -16,7 +16,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     ui.add_space(40.0);
                     ui.heading("No Map Loaded");
                     ui.add_space(12.0);
-                    ui.label("Open a .otbm file from File → Open Map");
+                    ui.label("Open a .otbm file from File \u{2192} Open Map or Open Chunk Directory");
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Tip: Switch to the Sprite Viewer tab above to browse sprites without a map.",
+                        )
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(140, 140, 160)),
+                    );
                     ui.add_space(20.0);
                     if ui.button("Open Map...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
@@ -55,14 +63,14 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
     // LOD levels based on tile pixel size:
     //   LOD 0: tile_px < 0.5  → chunk overview (one colored block per 64×64 chunk)
-    //   LOD 1: tile_px < 4    → minimap mode (colored dots per tile, no sprites)
-    //   LOD 2: tile_px < 8    → ground-only (ground sprite, skip items/grid)
-    //   LOD 3: tile_px >= 8   → full detail
+    //   LOD 1: tile_px < 6    → minimap mode (colored rects per tile, no sprites)
+    //   LOD 2: tile_px < 14   → ground-only (ground sprite, skip items/grid)
+    //   LOD 3: tile_px >= 14  → full detail with items + grid
     let lod = if tile_px < 0.5 {
         0
-    } else if tile_px < 4.0 {
+    } else if tile_px < 6.0 {
         1
-    } else if tile_px < 8.0 {
+    } else if tile_px < 14.0 {
         2
     } else {
         3
@@ -150,6 +158,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                         state.animate_sprites,
                         anim_time_ms,
                         *alpha,
+                        &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                     );
                 }
                 if lod >= 3 {
@@ -165,6 +175,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                             state.animate_sprites,
                             anim_time_ms,
                             *alpha,
+                            &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                         );
                     }
                 }
@@ -194,10 +206,41 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     let br = world_to_screen(wx + chunk_size, wy + chunk_size);
                     let chunk_rect = Rect::from_min_max(tl, br);
 
-                    // Color based on tile density in chunk
-                    let density = chunk.len() as f32 / (chunk_size * chunk_size) as f32;
-                    let intensity = (40.0 + density * 160.0) as u8;
-                    let color = Color32::from_rgb(intensity / 2, intensity, intensity / 3);
+                    // Color based on dominant tile type in chunk
+                    // Sample up to 16 tiles and pick the most common minimap color
+                    let mut color_counts: [u32; 256] = [0; 256];
+                    let mut sampled = 0u32;
+                    for tile in chunk.values() {
+                        if sampled >= 16 { break; }
+                        if let Some(ground_id) = tile.ground {
+                            if let Some(ref apps) = state.appearances {
+                                if let Some(app) = apps.get(appearances::Category::Object, ground_id as u32) {
+                                    if let Some(ref flags) = app.flags {
+                                        if let Some(ref automap) = flags.automap {
+                                            if let Some(ci) = automap.color {
+                                                color_counts[ci as usize & 0xFF] += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        sampled += 1;
+                    }
+                    // Find dominant color
+                    let mut best_idx = 0u8;
+                    let mut best_count = 0u32;
+                    for (i, &c) in color_counts.iter().enumerate() {
+                        if c > best_count { best_count = c; best_idx = i as u8; }
+                    }
+                    let color = if best_count > 0 {
+                        tibia_minimap_color(best_idx)
+                    } else {
+                        // Fallback: density-based green
+                        let density = chunk.len() as f32 / (chunk_size * chunk_size) as f32;
+                        let intensity = (40.0 + density * 160.0) as u8;
+                        Color32::from_rgb(intensity / 2, intensity, intensity / 3)
+                    };
                     painter.rect_filled(chunk_rect, 0.0, color);
                 }
             }
@@ -218,6 +261,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
         let tiles = map.get_tiles_in_area(vis_x1, vis_y1, vis_x2, vis_y2, cam_z);
 
+        // Local caches for this frame (Fix 2, 3, 4)
+        let mut minimap_cache: std::collections::HashMap<u16, Color32> = std::collections::HashMap::new();
+        let mut local_render_cache: std::collections::HashMap<u32, u8> = std::collections::HashMap::new();
+        let mut sort_buf: Vec<(u8, usize)> = Vec::with_capacity(32);
+
         for tile in &tiles {
             // Apply stride sampling at extreme zoom-out to stay responsive
             if stride > 1
@@ -229,17 +277,20 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
 
             let tl = world_to_screen(tile.x as f64, tile.y as f64);
             let br = world_to_screen(tile.x as f64 + 1.0, tile.y as f64 + 1.0);
-            // At low zoom, expand tile rect by half a pixel to eliminate seam artifacts
+            // At low zoom, expand tile rect to eliminate seam artifacts (black lines between tiles)
             let tile_rect = if tile_px < 16.0 {
-                let pad = 0.5;
+                let pad = if tile_px < 8.0 { 1.0 } else { 0.5 };
                 Rect::from_min_max(tl, Pos2::new(br.x + pad, br.y + pad))
             } else {
                 Rect::from_min_max(tl, br)
             };
 
             if lod == 1 {
-                // Minimap mode — single colored pixel per tile
-                let color = minimap_tile_color(tile, &state.appearances);
+                // Minimap mode — single colored pixel per tile (cached by ground_id)
+                let ground_id = tile.ground.unwrap_or(0);
+                let color = *minimap_cache.entry(ground_id).or_insert_with(|| {
+                    minimap_tile_color(tile, &state.appearances)
+                });
                 painter.rect_filled(tile_rect, 0.0, color);
             } else {
                 // LOD 2+ — render ground sprite
@@ -255,6 +306,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                             &ctx,
                             state.animate_sprites,
                             anim_time_ms,
+                            &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                         );
                     }
                 }
@@ -262,18 +315,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                 if lod >= 3 && state.show_items {
                     // Full detail — render all items sorted by z-order flags
                     // Order: clip → bottom → normal → top → topeffect
-                    let mut sorted_items: Vec<(u8, usize)> = tile
-                        .items
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, item)| {
-                            let order = item_render_order(item.id as u32, &state.appearances);
-                            (order, idx)
-                        })
-                        .collect();
-                    sorted_items.sort_by_key(|&(order, idx)| (order, idx));
+                    sort_buf.clear();
+                    sort_buf.extend(tile.items.iter().enumerate().map(|(idx, item)| {
+                        let order = *local_render_cache.entry(item.id as u32).or_insert_with(|| {
+                            item_render_order(item.id as u32, &state.appearances)
+                        });
+                        (order, idx)
+                    }));
+                    sort_buf.sort_by_key(|&(order, idx)| (order, idx));
 
-                    for &(_order, idx) in &sorted_items {
+                    for &(_order, idx) in &sort_buf {
                         let item = &tile.items[idx];
                         draw_item_sprite(
                             &painter,
@@ -285,6 +336,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                             &ctx,
                             state.animate_sprites,
                             anim_time_ms,
+                            &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                         );
                     }
 
@@ -485,6 +538,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                             &state.brush_registry,
                             state.animate_sprites,
                             anim_time_ms,
+                            &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                         )
                     } else {
                         false
@@ -597,6 +652,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                                 state.animate_sprites,
                                 anim_time_ms,
                                 120,
+                                &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                             );
                         }
                         for item in &src_tile.items {
@@ -611,6 +668,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                                 state.animate_sprites,
                                 anim_time_ms,
                                 120,
+                                &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                             );
                         }
                     }
@@ -651,7 +710,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
         let h = (vis_y2 as u64).saturating_sub(vis_y1 as u64) + 1;
         w * h
     };
-    state.perf.total_tiles = map.tile_count() as u64;
+    state.perf.total_tiles = state.cached_tile_count as u64;
 
     // Handle input
     handle_viewport_input(&response, state, &screen_to_world);
@@ -673,24 +732,28 @@ fn handle_viewport_input(
         state.camera.center_y -= delta.y as f64 / tile_px as f64;
     }
 
-    // Zoom with scroll wheel — smooth logarithmic zoom towards cursor
+    // Zoom with scroll wheel — zoom towards cursor position
     let scroll = response.ctx.input(|i| i.smooth_scroll_delta.y);
     let ctrl_held = response.ctx.input(|i| i.modifiers.ctrl);
     if scroll != 0.0 && response.hovered() {
-        // Store world position under cursor before zoom change
         if let Some(hover_pos) = response.hover_pos() {
+            // World position under cursor BEFORE zoom
             let (wx_before, wy_before) = screen_to_world(hover_pos.x, hover_pos.y);
+
+            // Apply zoom
             state.camera.zoom_by_scroll_fine(scroll, ctrl_held);
-            // Use zoom_target to compute the final camera offset
-            // (animate_zoom will interpolate there smoothly)
-            let target_tile_px = 32.0 * state.camera.zoom_target;
+
+            // Recompute world position under cursor AFTER zoom (new scale)
+            let new_tile_px = 32.0 * state.camera.zoom as f32;
             let rect = response.rect;
-            let dx_screen = hover_pos.x - (rect.min.x + rect.width() / 2.0);
-            let dy_screen = hover_pos.y - (rect.min.y + rect.height() / 2.0);
-            let new_wx = state.camera.center_x + dx_screen as f64 / target_tile_px as f64;
-            let new_wy = state.camera.center_y + dy_screen as f64 / target_tile_px as f64;
-            state.camera.center_x += wx_before - new_wx;
-            state.camera.center_y += wy_before - new_wy;
+            let screen_cx = rect.min.x + rect.width() / 2.0;
+            let screen_cy = rect.min.y + rect.height() / 2.0;
+            let wx_after = state.camera.center_x + (hover_pos.x - screen_cx) as f64 / new_tile_px as f64;
+            let wy_after = state.camera.center_y + (hover_pos.y - screen_cy) as f64 / new_tile_px as f64;
+
+            // Adjust camera so the world point stays pinned under cursor
+            state.camera.center_x += wx_before - wx_after;
+            state.camera.center_y += wy_before - wy_after;
         } else {
             state.camera.zoom_by_scroll_fine(scroll, ctrl_held);
         }
@@ -1077,6 +1140,8 @@ fn draw_brush_ghost(
     brush_registry: &crate::brushes::registry::BrushRegistry,
     animate_sprites: bool,
     anim_time_ms: u64,
+    texture_lru_gen: &mut std::collections::HashMap<u32, u64>,
+    texture_lru_counter: &mut u64,
 ) -> bool {
     let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
     let tint = Color32::from_rgba_unmultiplied(255, 255, 255, 100);
@@ -1097,7 +1162,7 @@ fn draw_brush_ghost(
             if let Some(sid) =
                 resolve_appearance_sprite(appearance, 0, animate_sprites, anim_time_ms)
             {
-                if let Some(tex) = get_or_upload(textures, sheets, ctx, sid) {
+                if let Some(tex) = get_or_upload(textures, sheets, ctx, sid, texture_lru_gen, texture_lru_counter) {
                     // Handle oversized sprites (64×64 etc.) — extend UP and LEFT
                     let [tex_w, tex_h] = tex.size();
                     let tile_w = rect.width();
@@ -1121,7 +1186,7 @@ fn draw_brush_ghost(
         }
     }
 
-    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id) {
+    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id, texture_lru_gen, texture_lru_counter) {
         let [tex_w, tex_h] = tex.size();
         let tile_w = rect.width();
         let tile_h = rect.height();
@@ -1300,13 +1365,15 @@ fn draw_item_sprite(
     ctx: &egui::Context,
     animate: bool,
     anim_time_ms: u64,
+    texture_lru_gen: &mut std::collections::HashMap<u32, u64>,
+    texture_lru_counter: &mut u64,
 ) {
     let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
 
     if let Some(ref apps) = appearances {
         if let Some(appearance) = apps.get(Category::Object, item_id) {
             if let Some(sid) = resolve_appearance_sprite(appearance, 0, animate, anim_time_ms) {
-                let tex = get_or_upload(textures, sheets, ctx, sid);
+                let tex = get_or_upload(textures, sheets, ctx, sid, texture_lru_gen, texture_lru_counter);
                 if let Some(tex) = tex {
                     // Handle oversized sprites — large sprites extend UP and LEFT
                     let [tex_w, tex_h] = tex.size();
@@ -1332,7 +1399,7 @@ fn draw_item_sprite(
     }
 
     // Fallback: try direct sprite_id lookup
-    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id) {
+    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id, texture_lru_gen, texture_lru_counter) {
         painter.image(tex.id(), rect, uv, Color32::WHITE);
         return;
     }
@@ -1356,6 +1423,8 @@ fn draw_item_sprite_alpha(
     animate: bool,
     anim_time_ms: u64,
     alpha: u8,
+    texture_lru_gen: &mut std::collections::HashMap<u32, u64>,
+    texture_lru_counter: &mut u64,
 ) {
     let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
     let tint = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
@@ -1363,7 +1432,7 @@ fn draw_item_sprite_alpha(
     if let Some(ref apps) = appearances {
         if let Some(appearance) = apps.get(Category::Object, item_id) {
             if let Some(sid) = resolve_appearance_sprite(appearance, 0, animate, anim_time_ms) {
-                if let Some(tex) = get_or_upload(textures, sheets, ctx, sid) {
+                if let Some(tex) = get_or_upload(textures, sheets, ctx, sid, texture_lru_gen, texture_lru_counter) {
                     let [tex_w, tex_h] = tex.size();
                     let tile_w = rect.width();
                     let tile_h = rect.height();
@@ -1386,21 +1455,42 @@ fn draw_item_sprite_alpha(
         }
     }
 
-    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id) {
+    if let Some(tex) = get_or_upload(textures, sheets, ctx, item_id, texture_lru_gen, texture_lru_counter) {
         painter.image(tex.id(), rect, uv, tint);
     }
 }
 
 /// Lazy texture upload: get from cache or upload from sprite sheets on first use.
+/// Updates LRU generation counter on both cache hits and misses for O(1) access tracking.
 pub(crate) fn get_or_upload(
     textures: &mut std::collections::HashMap<u32, egui::TextureHandle>,
     sheets: &std::collections::HashMap<String, pte_assets::SpriteSheet>,
     ctx: &egui::Context,
     sprite_id: u32,
+    texture_lru_gen: &mut std::collections::HashMap<u32, u64>,
+    texture_lru_counter: &mut u64,
+) -> Option<egui::TextureHandle> {
+    get_or_upload_lazy(textures, sheets, ctx, sprite_id, texture_lru_gen, texture_lru_counter, None)
+}
+
+/// get_or_upload with optional lazy sheet loader fallback.
+pub(crate) fn get_or_upload_lazy(
+    textures: &mut std::collections::HashMap<u32, egui::TextureHandle>,
+    sheets: &std::collections::HashMap<String, pte_assets::SpriteSheet>,
+    ctx: &egui::Context,
+    sprite_id: u32,
+    texture_lru_gen: &mut std::collections::HashMap<u32, u64>,
+    texture_lru_counter: &mut u64,
+    lazy_loader: Option<&mut pte_assets::LazySheetLoader>,
 ) -> Option<egui::TextureHandle> {
     if let Some(tex) = textures.get(&sprite_id) {
+        // Cache hit — update generation for LRU tracking (O(1))
+        texture_lru_gen.insert(sprite_id, *texture_lru_counter);
+        *texture_lru_counter += 1;
         return Some(tex.clone());
     }
+
+    // Try eagerly-loaded sheets first
     for sheet in sheets.values() {
         if sprite_id >= sheet.first_sprite_id && sprite_id <= sheet.last_sprite_id {
             if let Some(pixels) = sheet.get_sprite(sprite_id) {
@@ -1408,10 +1498,28 @@ pub(crate) fn get_or_upload(
                 let tex =
                     crate::sprite_picker::upload_sprite_texture(ctx, sprite_id, &pixels, w, h);
                 textures.insert(sprite_id, tex.clone());
+                texture_lru_gen.insert(sprite_id, *texture_lru_counter);
+                *texture_lru_counter += 1;
                 return Some(tex);
             }
         }
     }
+
+    // Fallback: lazy loader (loads sheet on-demand from disk)
+    if let Some(loader) = lazy_loader {
+        if let Some(sheet) = loader.get_sheet(sprite_id) {
+            if let Some(pixels) = sheet.get_sprite(sprite_id) {
+                let (w, h) = sheet.sprite_dimensions();
+                let tex =
+                    crate::sprite_picker::upload_sprite_texture(ctx, sprite_id, &pixels, w, h);
+                textures.insert(sprite_id, tex.clone());
+                texture_lru_gen.insert(sprite_id, *texture_lru_counter);
+                *texture_lru_counter += 1;
+                return Some(tex);
+            }
+        }
+    }
+
     None
 }
 

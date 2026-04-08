@@ -97,11 +97,37 @@ impl MapEditorApp {
             }
         }
 
+        // Promote API-triggered asset load into the standard pending_asset_load slot
+        if self.state.pending_asset_load.is_none() {
+            if let Some(dir) = self.state.pending_api_asset_load.take() {
+                self.state.pending_asset_load = Some(dir);
+            }
+        }
+
         // Asset + map loading — kick off unified background thread
         if let Some(dir) = self.state.pending_asset_load.take() {
             let map_path = self.state.pending_map_load.take();
             let custom_maps = std::mem::take(&mut self.state.pending_custom_maps);
-            self.load_project_async(&dir, map_path, custom_maps, ctx);
+
+            // Branch on project type: legacy .dat/.spr vs protobuf catalog
+            let legacy_paths = self.state.active_project.as_ref().and_then(|p| {
+                if let crate::asset_scanner::ProjectType::Legacy {
+                    ref dat_path,
+                    ref spr_path,
+                } = p.project_type
+                {
+                    Some((dat_path.clone(), spr_path.clone()))
+                } else {
+                    None
+                }
+            });
+            if let Some((dat_path, spr_path)) = legacy_paths {
+                self.load_legacy_project_async(
+                    &dir, &dat_path, &spr_path, map_path, custom_maps, ctx,
+                );
+            } else {
+                self.load_project_async(&dir, map_path, custom_maps, ctx);
+            }
         }
 
         // Poll background loader
@@ -136,6 +162,52 @@ impl MapEditorApp {
             }
         }
 
+        // Poll legacy conversion result
+        if let Some(ref rx) = self.state.scanner.convert_rx {
+            match rx.try_recv() {
+                Ok(Ok(out_dir)) => {
+                    tracing::info!("Conversion complete: {}", out_dir.display());
+                    self.state.asset_status = AssetStatus::NotLoaded;
+                    self.state.loader.progress = None;
+                    self.state.scanner.convert_rx = None;
+                    // Auto-scan the output directory to load the converted project
+                    self.state.scanner.scan_root = Some(out_dir.clone());
+                    self.state.scanner.scanning = true;
+                    self.state.scanner.open = true;
+                    let (tx, scan_rx) = std::sync::mpsc::channel();
+                    self.state.scanner.scan_rx = Some(scan_rx);
+                    std::thread::spawn(move || {
+                        let result = crate::asset_scanner::scan_directory(&out_dir, 4);
+                        let _ = tx.send(result);
+                    });
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Conversion failed: {e}");
+                    self.state.asset_status = AssetStatus::Error(format!("Conversion failed: {e}"));
+                    self.state.loader.progress = None;
+                    self.state.scanner.convert_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Still converting — update progress from loader progress
+                    if let Some(ref progress) = self.state.loader.progress {
+                        if let Ok(p) = progress.lock() {
+                            self.state.asset_status = AssetStatus::Loading {
+                                progress: p.progress,
+                                message: p.message.clone(),
+                            };
+                        }
+                    }
+                    ctx.request_repaint();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.state.asset_status =
+                        AssetStatus::Error("Conversion thread crashed".to_string());
+                    self.state.loader.progress = None;
+                    self.state.scanner.convert_rx = None;
+                }
+            }
+        }
+
         // Standalone map loading (without asset reload, e.g. from map switcher)
         if let Some(path) = self.state.pending_map_load.take() {
             if self.state.assets_ready() {
@@ -143,6 +215,18 @@ impl MapEditorApp {
                 self.load_map_async(&path, custom_maps);
             } else {
                 self.state.pending_map_load = Some(path);
+            }
+        }
+
+        // Chunk directory loading (standalone — when no project load is in progress)
+        // When opening a project, chunks are loaded inside load_project_async instead.
+        if self.state.pending_asset_load.is_none() {
+            if let Some(dir) = self.state.pending_chunk_dir_load.take() {
+                if self.state.assets_ready() {
+                    self.load_chunk_dir_async(&dir);
+                } else {
+                    self.state.pending_chunk_dir_load = Some(dir);
+                }
             }
         }
 
@@ -177,6 +261,8 @@ impl MapEditorApp {
             }
         }
 
+        // Chunk cache disabled — all chunks loaded upfront via load_chunk_dir
+
         // Save actions (deferred from menu/hotkey to avoid borrow issues)
         if self.state.pending_quick_save {
             self.state.pending_quick_save = false;
@@ -185,6 +271,38 @@ impl MapEditorApp {
         if self.state.pending_save_as {
             self.state.pending_save_as = false;
             self.save_map_as();
+        }
+
+        // Poll background save completion
+        if self.state.map_saving {
+            if let Some(ref rx) = self.state.save_result_rx {
+                match rx.try_recv() {
+                    Ok(Ok(path)) => {
+                        tracing::info!("Saved map to {}", path.display());
+                        self.state.mark_saved();
+                        self.save_spawns();
+                        self.state.map_saving = false;
+                        self.state.map_saving_message.clear();
+                        self.state.save_result_rx = None;
+                    }
+                    Ok(Err(e)) => {
+                        tracing::error!("Failed to save map: {e}");
+                        self.state.map_saving = false;
+                        self.state.map_saving_message.clear();
+                        self.state.save_result_rx = None;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // Still saving — keep overlay visible
+                        ctx.request_repaint();
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        tracing::error!("Save thread disconnected unexpectedly");
+                        self.state.map_saving = false;
+                        self.state.map_saving_message.clear();
+                        self.state.save_result_rx = None;
+                    }
+                }
+            }
         }
 
         // Selection nudge (arrow keys)
@@ -214,7 +332,7 @@ impl MapEditorApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
     }
 
-    /// Load entire project (assets + map + overlays) on a background thread.
+    /// Load entire project (assets + map/chunks + overlays) on a background thread.
     fn load_project_async(
         &mut self,
         dir: &std::path::Path,
@@ -223,6 +341,7 @@ impl MapEditorApp {
         _ctx: &egui::Context,
     ) {
         let dir = dir.to_path_buf();
+        let chunk_dir = self.state.pending_chunk_dir_load.take();
         let progress = std::sync::Arc::new(std::sync::Mutex::new(LoadingProgress {
             progress: 0.0,
             message: "Parsing catalog…".to_string(),
@@ -295,8 +414,48 @@ impl MapEditorApp {
                 total_sheets
             );
 
-            // ── Stage 4: Parse main map ──
-            let (map, map_path_final, spawns) = if let Some(ref mp) = map_path {
+            // ── Stage 4: Parse map (chunks or monolithic) — skip if assets-only ──
+            let (map, map_path_final, spawns) = if chunk_dir.is_none() && map_path.is_none() {
+                // Assets-only load — skip map stages entirely
+                {
+                    let mut p = progress.lock().unwrap();
+                    p.progress = 0.90;
+                    p.message = "Assets loaded (no map)".to_string();
+                    p.stage = crate::state::LoadingStage::Finalizing;
+                }
+                (None, None, Vec::new())
+            } else if let Some(ref cd) = chunk_dir {
+                // Chunk directory — load ALL chunks in parallel
+                {
+                    let mut p = progress.lock().unwrap();
+                    p.progress = 0.62;
+                    p.message = "Loading all chunks (parallel)…".to_string();
+                    p.stage = crate::state::LoadingStage::MapParse;
+                }
+
+                let manifest_path = cd.join("manifest.json");
+                let prog_chunks = progress.clone();
+                match pte_otbm::chunk_io::load_chunk_dir_with_progress(cd, move |done, total| {
+                    if let Ok(mut p) = prog_chunks.lock() {
+                        let pct = 0.62 + 0.30 * (done as f32 / total.max(1) as f32);
+                        p.progress = pct;
+                        p.message = format!("Parsing chunks… {}/{}", done, total);
+                    }
+                }) {
+                    Ok(map) => {
+                        if let Ok(mut p) = progress.lock() {
+                            p.progress = 0.95;
+                            p.message = format!("Loaded {} tiles from {} chunks", map.tile_count(), map.chunks.len());
+                        }
+                        tracing::info!("Chunk dir: loaded {} tiles", map.tile_count());
+                        (Some(map), Some(manifest_path), Vec::new())
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to load chunk dir: {e}");
+                        (None, None, Vec::new())
+                    }
+                }
+            } else if let Some(ref mp) = map_path {
                 {
                     let mut p = progress.lock().unwrap();
                     p.progress = 0.62;
@@ -417,14 +576,225 @@ impl MapEditorApp {
                 map,
                 map_path: map_path_final,
                 spawns,
+                chunk_dir,
+                chunk_manifest_data: None,
+                lazy_loader: None,
             }));
         });
     }
 
+    /// Load a legacy .dat/.spr project asynchronously.
+    /// Converts legacy formats into CIP types so the rendering pipeline works unchanged.
+    fn load_legacy_project_async(
+        &mut self,
+        dir: &std::path::Path,
+        dat_path: &std::path::Path,
+        spr_path: &std::path::Path,
+        map_path: Option<std::path::PathBuf>,
+        custom_maps: Vec<std::path::PathBuf>,
+        _ctx: &egui::Context,
+    ) {
+        let dir = dir.to_path_buf();
+        let dat_path = dat_path.to_path_buf();
+        let spr_path = spr_path.to_path_buf();
+        let progress = std::sync::Arc::new(std::sync::Mutex::new(LoadingProgress {
+            progress: 0.0,
+            message: "Parsing legacy sprites…".to_string(),
+            stage: crate::state::LoadingStage::SpriteSheets,
+        }));
+
+        self.state.asset_status = AssetStatus::Loading {
+            progress: 0.0,
+            message: "Parsing legacy sprites…".to_string(),
+        };
+        self.state.loader.progress = Some(progress.clone());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.state.loader.asset_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                load_legacy_inner(dir, dat_path, spr_path, map_path, custom_maps, &progress)
+            }));
+            match result {
+                Ok(inner) => {
+                    let _ = tx.send(inner);
+                }
+                Err(panic_info) => {
+                    let msg = if let Some(s) = panic_info.downcast_ref::<String>() {
+                        s.clone()
+                    } else if let Some(s) = panic_info.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else {
+                        "Unknown panic in legacy loader".to_string()
+                    };
+                    let _ = tx.send(Err(format!("Legacy loading failed: {msg}")));
+                }
+            }
+        });
+    }
+}
+
+/// Inner loading logic for legacy projects — extracted so it can be wrapped in catch_unwind.
+fn load_legacy_inner(
+    dir: std::path::PathBuf,
+    dat_path: std::path::PathBuf,
+    spr_path: std::path::PathBuf,
+    map_path: Option<std::path::PathBuf>,
+    custom_maps: Vec<std::path::PathBuf>,
+    progress: &std::sync::Arc<std::sync::Mutex<LoadingProgress>>,
+) -> Result<LoadedAssets, String> {
+    // ── Stage 1: Parse SPR ──
+    let spr = tibia_spr_dat::parse_spr(&spr_path).map_err(|e| format!("SPR parse: {e:#}"))?;
+    tracing::info!("Parsed SPR: {} sprites", spr.sprite_count());
+
+    // ── Stage 2: Parse DAT ──
+    {
+        let mut p = progress.lock().unwrap();
+        p.progress = 0.25;
+        p.message = "Parsing legacy metadata…".to_string();
+        p.stage = crate::state::LoadingStage::Appearances;
+    }
+    let dat = tibia_spr_dat::parse_dat(&dat_path).map_err(|e| format!("DAT parse: {e:#}"))?;
+    tracing::info!(
+        "Parsed DAT: {} items, {} outfits, {} effects, {} missiles",
+        dat.item_count(),
+        dat.outfit_count(),
+        dat.effect_count(),
+        dat.missile_count(),
+    );
+
+    // ── Stage 3: Convert SPR → SpriteSheets ──
+    {
+        let mut p = progress.lock().unwrap();
+        p.progress = 0.35;
+        p.message = "Packing sprites into sheets…".to_string();
+        p.stage = crate::state::LoadingStage::SpriteSheets;
+    }
+    let sheets = crate::legacy_adapter::spr_to_sheets(&spr);
+
+    // ── Stage 4: Convert DAT → Appearances ──
+    {
+        let mut p = progress.lock().unwrap();
+        p.progress = 0.55;
+        p.message = "Converting appearances…".to_string();
+        p.stage = crate::state::LoadingStage::Appearances;
+    }
+    let appearances = crate::legacy_adapter::dat_to_appearances(&dat);
+
+    // ── Stage 5: Build synthetic catalog ──
+    let catalog = crate::legacy_adapter::build_synthetic_catalog(&spr);
+
+    // ── Stage 6: Parse main map ──
+    let (map, map_path_final, spawns) = if let Some(ref mp) = map_path {
+        {
+            let mut p = progress.lock().unwrap();
+            p.progress = 0.62;
+            p.message = "Parsing map…".to_string();
+            p.stage = crate::state::LoadingStage::MapParse;
+        }
+        match pte_otbm::parse_otbm(mp) {
+            Ok(mut map) => {
+                tracing::info!("Loaded map: {} tiles", map.tile_count());
+
+                // Merge overlays
+                {
+                    let mut p = progress.lock().unwrap();
+                    p.progress = 0.72;
+                    p.message = if custom_maps.is_empty() {
+                        "No overlays".to_string()
+                    } else {
+                        format!("Merging {} overlay maps…", custom_maps.len())
+                    };
+                    p.stage = crate::state::LoadingStage::Overlays;
+                }
+                for (i, overlay_path) in custom_maps.iter().enumerate() {
+                    if let Ok(overlay) = pte_otbm::parse_otbm(overlay_path) {
+                        for chunk in overlay.chunks.values() {
+                            for tile in chunk.values() {
+                                map.set_tile(tile.clone());
+                            }
+                        }
+                        for town in &overlay.towns {
+                            if !map.towns.iter().any(|t| t.id == town.id) {
+                                map.towns.push(town.clone());
+                            }
+                        }
+                        for wp in &overlay.waypoints {
+                            if !map.waypoints.iter().any(|w| w.name == wp.name) {
+                                map.waypoints.push(wp.clone());
+                            }
+                        }
+                        for house in &overlay.houses {
+                            if !map.houses.iter().any(|h| h.id == house.id) {
+                                map.houses.push(house.clone());
+                            }
+                        }
+                    }
+                    let frac = 0.72 + 0.08 * ((i + 1) as f32 / custom_maps.len() as f32);
+                    if let Ok(mut p) = progress.lock() {
+                        p.progress = frac;
+                    }
+                }
+
+                // Spawns
+                {
+                    let mut p = progress.lock().unwrap();
+                    p.progress = 0.82;
+                    p.message = "Loading spawns…".to_string();
+                    p.stage = crate::state::LoadingStage::Spawns;
+                }
+                let spawn_file = if map.spawn_file.is_empty() {
+                    "spawn.xml".to_string()
+                } else {
+                    map.spawn_file.clone()
+                };
+                let spawn_path = mp.with_file_name(&spawn_file);
+                let loaded_spawns = if spawn_path.exists() {
+                    crate::spawn_xml::read_spawns(&spawn_path).unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
+                (Some(map), Some(mp.clone()), loaded_spawns)
+            }
+            Err(e) => {
+                tracing::error!("Failed to load map: {e:#}");
+                (None, None, Vec::new())
+            }
+        }
+    } else {
+        (None, None, Vec::new())
+    };
+
+    // ── Done ──
+    {
+        let mut p = progress.lock().unwrap();
+        p.progress = 0.95;
+        p.message = "Finalizing…".to_string();
+        p.stage = crate::state::LoadingStage::Finalizing;
+    }
+
+    Ok(LoadedAssets {
+        catalog,
+        appearances: Some(appearances),
+        sheets,
+        asset_dir: dir,
+        map,
+        map_path: map_path_final,
+        spawns,
+        chunk_dir: None,
+        chunk_manifest_data: None,
+        lazy_loader: None,
+    })
+}
+
+impl MapEditorApp {
     /// Apply loaded project data to state (main-thread, lightweight — just moves).
     fn finish_project_load(&mut self, assets: LoadedAssets, _ctx: &egui::Context) {
         self.state.appearances = assets.appearances;
         self.state.sprite_sheets = assets.sheets;
+        self.state.lazy_sheets = assets.lazy_loader;
         self.state.sprite_textures.clear(); // Clear stale texture cache
         self.state.catalog = Some(assets.catalog);
         self.state.asset_dir = Some(assets.asset_dir);
@@ -436,11 +806,55 @@ impl MapEditorApp {
             self.apply_loaded_map(map, assets.map_path.unwrap_or_default(), assets.spawns);
         }
 
+        // Store chunk dir for save operations
+        if let Some(cd) = assets.chunk_dir {
+            self.state.chunk_dir = Some(cd.to_string_lossy().to_string());
+        }
+
+        // Load visual metadata if present (visual_classifications.json)
+        if let Some(ref asset_dir) = self.state.asset_dir {
+            let meta_path = asset_dir.join("metadata").join("visual_classifications.json");
+            if meta_path.exists() {
+                match std::fs::read_to_string(&meta_path) {
+                    Ok(json_str) => {
+                        match serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(&json_str) {
+                            Ok(raw) => {
+                                let mut meta = std::collections::HashMap::new();
+                                let mut groups = std::collections::BTreeSet::new();
+                                for (id_str, val) in &raw {
+                                    if let Ok(id) = id_str.parse::<u32>() {
+                                        if let Some(cat) = val.get("visual_category").and_then(|v| v.as_str()) {
+                                            meta.insert(id, cat.to_string());
+                                            // Extract top-level group (e.g. "ground" from "ground/grass")
+                                            let group = cat.split('/').next().unwrap_or(cat);
+                                            groups.insert(group.to_string());
+                                        }
+                                    }
+                                }
+                                tracing::info!("Loaded visual metadata: {} items, {} categories", meta.len(), groups.len());
+                                self.state.visual_metadata = meta;
+                                self.state.visual_category_groups = groups.into_iter().collect();
+                            }
+                            Err(e) => tracing::warn!("Failed to parse visual metadata: {e}"),
+                        }
+                    }
+                    Err(e) => tracing::warn!("Failed to read visual metadata: {e}"),
+                }
+            }
+        }
+
         self.state.asset_status = AssetStatus::Ready;
         tracing::info!("Project ready — all assets loaded on background thread");
 
         if self.state.mode == EditorMode::Welcome {
             self.state.mode = EditorMode::MapEditor;
+        }
+
+        // If "Load Assets Only" was used, switch to sprite viewer tab
+        if self.state.pending_sprite_viewer_after_load {
+            self.state.active_tab = WorkspaceTab::SpriteViewer;
+            self.state.pending_sprite_viewer_after_load = false;
+            self.state.loading_assets_only = false;
         }
     }
 
@@ -510,6 +924,65 @@ impl MapEditorApp {
         });
     }
 
+    /// Load a chunk directory asynchronously on a background thread with progress.
+    fn load_chunk_dir_async(&mut self, dir: &std::path::Path) {
+        let dir = dir.to_path_buf();
+        let progress = std::sync::Arc::new(std::sync::Mutex::new(crate::state::LoadingProgress {
+            progress: 0.0,
+            message: "Reading chunk manifest…".to_string(),
+            stage: crate::state::LoadingStage::MapParse,
+        }));
+        self.state.map_loading = true;
+        self.state.map_loading_message = "Reading chunk manifest…".to_string();
+        self.state.loader.map_progress = Some(progress.clone());
+        self.state.chunk_dir = Some(dir.to_string_lossy().to_string());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.state.loader.map_rx = Some(rx);
+
+        let prog = progress.clone();
+        std::thread::spawn(move || {
+            if let Ok(mut p) = prog.lock() {
+                p.message = "Loading all chunks (parallel)…".to_string();
+            }
+
+            let manifest_path = dir.join("manifest.json");
+            let prog_chunks = prog.clone();
+            match pte_otbm::chunk_io::load_chunk_dir_with_progress(&dir, move |done, total| {
+                if let Ok(mut p) = prog_chunks.lock() {
+                    let pct = 0.1 + 0.8 * (done as f32 / total.max(1) as f32);
+                    p.progress = pct;
+                    p.message = format!("Parsing chunks… {}/{}", done, total);
+                }
+            }) {
+                Ok(map) => {
+                    // Load spawns
+                    let spawn_file = if map.spawn_file.is_empty() {
+                        "xtrails-monster.xml".to_string()
+                    } else {
+                        map.spawn_file.clone()
+                    };
+                    let spawn_path = dir.join(&spawn_file);
+                    let spawns = if spawn_path.exists() {
+                        crate::spawn_xml::read_spawns(&spawn_path).unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+
+                    if let Ok(mut p) = prog.lock() {
+                        p.progress = 1.0;
+                        p.message = format!("Loaded {} tiles", map.tile_count());
+                    }
+
+                    let _ = tx.send(Ok((map, manifest_path, spawns)));
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("Failed to load chunks: {e}")));
+                }
+            }
+        });
+    }
+
     /// Apply a loaded map + spawns to state (lightweight main-thread work).
     fn apply_loaded_map(
         &mut self,
@@ -527,6 +1000,9 @@ impl MapEditorApp {
         self.state.undo_stack.clear();
         self.state.undo_cursor = 0;
 
+        // Mark cache dirty so stats are recomputed
+        self.state.cache_dirty = true;
+
         crate::creature_palette::rebuild_creature_list(&mut self.state);
 
         // Recent files
@@ -543,10 +1019,14 @@ impl MapEditorApp {
             self.state.z_surface
         );
 
-        // Center camera
+        // Center camera on first town (if available), otherwise map center
         self.state.camera.z_level = self.state.z_surface;
         if let Some(ref map) = self.state.map_data {
-            if let Some((min_x, min_y, max_x, max_y)) = map.xy_extents(self.state.z_surface) {
+            if let Some(town) = map.towns.first() {
+                self.state.camera.center_x = town.position.x as f64;
+                self.state.camera.center_y = town.position.y as f64;
+                self.state.camera.z_level = town.position.z;
+            } else if let Some((min_x, min_y, max_x, max_y)) = map.xy_extents(self.state.z_surface) {
                 let cx = (min_x as f64 + max_x as f64) / 2.0;
                 let cy = (min_y as f64 + max_y as f64) / 2.0;
                 self.state.camera.center_x = cx;
@@ -562,6 +1042,12 @@ impl MapEditorApp {
         let Some(ref original) = self.state.map_path else {
             return;
         };
+
+        // Skip autosave for very large maps to avoid blocking the UI
+        if map.tile_count() > 5_000_000 {
+            tracing::debug!("Skipping autosave: map has >5M tiles");
+            return;
+        }
 
         // Write to a .autosave sibling file, not the original
         let mut autosave_path = original.clone();
@@ -601,14 +1087,30 @@ impl MapEditorApp {
         }
 
         if let Some(path) = dialog.save_file() {
-            match pte_otbm::serialize_otbm(map, &path) {
-                Ok(()) => {
-                    tracing::info!("Saved map to {}", path.display());
+            // Serialize to bytes on the main thread, then write to disk in background
+            self.state.map_saving = true;
+            self.state.map_saving_message = "Serializing map...".to_string();
+            match pte_otbm::serialize_otbm_bytes(map) {
+                Ok(bytes) => {
+                    self.state.map_saving_message = "Writing to disk...".to_string();
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    self.state.save_result_rx = Some(rx);
+                    let save_path = path.clone();
                     self.state.map_path = Some(path);
-                    self.state.mark_saved();
-                    self.save_spawns();
+                    std::thread::spawn(move || {
+                        let temp_path = save_path.with_extension("otbm.tmp");
+                        let result = std::fs::write(&temp_path, &bytes)
+                            .and_then(|_| std::fs::rename(&temp_path, &save_path))
+                            .map(|_| save_path.clone())
+                            .map_err(|e| format!("{e:#}"));
+                        let _ = tx.send(result);
+                    });
                 }
-                Err(e) => tracing::error!("Failed to save map: {e:#}"),
+                Err(e) => {
+                    tracing::error!("Failed to serialize map: {e:#}");
+                    self.state.map_saving = false;
+                    self.state.map_saving_message.clear();
+                }
             }
         }
     }
@@ -633,13 +1135,29 @@ impl MapEditorApp {
             }
         }
 
-        match pte_otbm::serialize_otbm(map, &path) {
-            Ok(()) => {
-                tracing::info!("Saved map to {}", path.display());
-                self.state.mark_saved();
-                self.save_spawns();
+        // Serialize to bytes on the main thread, then write to disk in background
+        self.state.map_saving = true;
+        self.state.map_saving_message = "Serializing map...".to_string();
+        match pte_otbm::serialize_otbm_bytes(map) {
+            Ok(bytes) => {
+                self.state.map_saving_message = "Writing to disk...".to_string();
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.state.save_result_rx = Some(rx);
+                let save_path = path;
+                std::thread::spawn(move || {
+                    let temp_path = save_path.with_extension("otbm.tmp");
+                    let result = std::fs::write(&temp_path, &bytes)
+                        .and_then(|_| std::fs::rename(&temp_path, &save_path))
+                        .map(|_| save_path.clone())
+                        .map_err(|e| format!("{e:#}"));
+                    let _ = tx.send(result);
+                });
             }
-            Err(e) => tracing::error!("Failed to save map: {e:#}"),
+            Err(e) => {
+                tracing::error!("Failed to serialize map: {e:#}");
+                self.state.map_saving = false;
+                self.state.map_saving_message.clear();
+            }
         }
     }
 
@@ -773,6 +1291,16 @@ impl MapEditorApp {
                     ui.close_menu();
                 }
 
+                if ui.button("Open Chunk Directory...").clicked() {
+                    if let Some(dir) = rfd::FileDialog::new()
+                        .set_title("Select chunk directory (with manifest.json)")
+                        .pick_folder()
+                    {
+                        self.state.pending_chunk_dir_load = Some(dir);
+                    }
+                    ui.close_menu();
+                }
+
                 if self.state.active_project.is_some() && ui.button("Switch Map...").clicked() {
                     self.state.show_map_switcher = true;
                     ui.close_menu();
@@ -819,6 +1347,47 @@ impl MapEditorApp {
                     ui.close_menu();
                 }
 
+                let chunk_save_enabled = save_enabled && self.state.chunk_dir.is_some();
+                if ui
+                    .add_enabled(
+                        chunk_save_enabled,
+                        egui::Button::new("Save Chunks"),
+                    )
+                    .on_hover_text("Save map back to the chunk directory")
+                    .clicked()
+                {
+                    if let (Some(map), Some(ref dir)) = (&self.state.map_data, &self.state.chunk_dir) {
+                        let dir_path = std::path::Path::new(dir);
+                        match pte_otbm::chunk_io::save_chunk_dir(map, dir_path) {
+                            Ok(count) => tracing::info!("Saved {} chunks to {}", count, dir),
+                            Err(e) => tracing::error!("Failed to save chunks: {}", e),
+                        }
+                    }
+                    ui.close_menu();
+                }
+
+                if ui
+                    .add_enabled(save_enabled, egui::Button::new("Save As Chunks..."))
+                    .on_hover_text("Save map as a new chunk directory")
+                    .clicked()
+                {
+                    if let Some(dir) = rfd::FileDialog::new()
+                        .set_title("Select output directory for chunks")
+                        .pick_folder()
+                    {
+                        if let Some(ref map) = self.state.map_data {
+                            match pte_otbm::chunk_io::save_chunk_dir(map, &dir) {
+                                Ok(count) => {
+                                    tracing::info!("Saved {} chunks to {}", count, dir.display());
+                                    self.state.chunk_dir = Some(dir.to_string_lossy().to_string());
+                                }
+                                Err(e) => tracing::error!("Failed to save chunks: {}", e),
+                            }
+                        }
+                    }
+                    ui.close_menu();
+                }
+
                 ui.separator();
 
                 if ui.button("Load Materials XML...").clicked() {
@@ -831,6 +1400,27 @@ impl MapEditorApp {
                 ui.separator();
 
                 if ui.button("Back to Launcher").clicked() {
+                    // Clear all loaded state
+                    // Move heavy data to background thread for deallocation
+                    let old_map = self.state.map_data.take();
+                    let old_undo = std::mem::take(&mut self.state.undo_stack);
+                    let old_clipboard = self.state.clipboard.take();
+                    std::thread::spawn(move || {
+                        drop(old_map); // 150M+ tiles freed off UI thread
+                        drop(old_undo);
+                        drop(old_clipboard);
+                    });
+                    self.state.map_path = None;
+                    self.state.chunk_dir = None;
+                    self.state.chunk_manifest = None;
+                    self.state.spawns.clear();
+                    self.state.undo_cursor = 0;
+                    self.state.save_version = 0;
+                    self.state.sprite_textures.clear();
+                    self.state.texture_lru_gen.clear();
+                    self.state.texture_lru_counter = 0;
+                    self.state.selection = None;
+                    self.state.hover_tile = None;
                     self.state.mode = EditorMode::Welcome;
                     self.state.active_tab = WorkspaceTab::MapEditor;
                     ui.close_menu();
@@ -1254,30 +1844,8 @@ impl MapEditorApp {
                 crate::nav_history::go_forward(&mut self.state);
             }
 
-            // Arrow key selection nudge (when selection exists, no modifiers)
-            if self.state.selection.is_some() && !i.modifiers.alt && !i.modifiers.ctrl {
-                let mut dx = 0i32;
-                let mut dy = 0i32;
-                if i.key_pressed(egui::Key::ArrowLeft) {
-                    dx = -1;
-                }
-                if i.key_pressed(egui::Key::ArrowRight) {
-                    dx = 1;
-                }
-                if i.key_pressed(egui::Key::ArrowUp) {
-                    dy = -1;
-                }
-                if i.key_pressed(egui::Key::ArrowDown) {
-                    dy = 1;
-                }
-
-                if dx != 0 || dy != 0 {
-                    self.state.pending_selection_nudge = Some((dx, dy));
-                }
-            }
-
-            // Arrow key camera pan (when no selection, no modifiers)
-            if self.state.selection.is_none() && !i.modifiers.alt && !i.modifiers.ctrl {
+            // Arrow key camera pan (always, no modifiers)
+            if !i.modifiers.alt && !i.modifiers.ctrl {
                 let pan_speed = 4.0 / self.state.camera.zoom as f64;
                 if i.key_pressed(egui::Key::ArrowLeft) {
                     self.state.camera.center_x -= pan_speed;
@@ -1467,6 +2035,9 @@ impl eframe::App for MapEditorApp {
         // Texture cache eviction (once per frame)
         self.state.evict_textures();
 
+        // Refresh cached tile stats if dirty (once per frame, amortized)
+        self.state.refresh_cache();
+
         // Auto-updater: start check if not already, poll, show UI
         crate::updater::start_update_check(&mut self.state.updater);
         crate::updater::poll(&mut self.state.updater);
@@ -1561,15 +2132,20 @@ impl eframe::App for MapEditorApp {
                             .progress
                             .as_ref()
                             .and_then(|p| p.lock().ok().map(|p| p.stage));
-                        let stages = [
-                            (crate::state::LoadingStage::Catalog, "Catalog"),
-                            (crate::state::LoadingStage::Appearances, "Appearances"),
-                            (crate::state::LoadingStage::SpriteSheets, "Sprites"),
-                            (crate::state::LoadingStage::MapParse, "Map"),
-                            (crate::state::LoadingStage::Overlays, "Overlays"),
-                            (crate::state::LoadingStage::Spawns, "Spawns"),
-                            (crate::state::LoadingStage::Finalizing, "Finalizing"),
+                        let all_stages = [
+                            (crate::state::LoadingStage::Catalog, "Catalog", false),
+                            (crate::state::LoadingStage::Appearances, "Appearances", false),
+                            (crate::state::LoadingStage::SpriteSheets, "Sprites", false),
+                            (crate::state::LoadingStage::MapParse, "Map", true),      // map-only
+                            (crate::state::LoadingStage::Overlays, "Overlays", true),  // map-only
+                            (crate::state::LoadingStage::Spawns, "Spawns", true),      // map-only
+                            (crate::state::LoadingStage::Finalizing, "Finalizing", false),
                         ];
+                        let assets_only = self.state.loading_assets_only;
+                        let stages: Vec<_> = all_stages.iter()
+                            .filter(|(_, _, map_only)| !assets_only || !map_only)
+                            .map(|(s, l, _)| (*s, *l))
+                            .collect();
                         ui.horizontal(|ui| {
                             ui.add_space((ui.available_width() - 380.0).max(0.0) / 2.0);
                             for (s, label) in &stages {
@@ -1608,23 +2184,97 @@ impl eframe::App for MapEditorApp {
             return;
         }
 
-        // Show map loading overlay (standalone map switch)
+        // Show map loading overlay with progress bar
         if self.state.map_loading {
+            let progress_val = self.state.loader.map_progress.as_ref()
+                .and_then(|p| p.lock().ok())
+                .map(|p| p.progress)
+                .unwrap_or(0.0);
+
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(crate::theme::BG_BASE))
                 .show(ctx, |ui| {
-                    ui.add_space(ui.available_height() * 0.38);
+                    ui.add_space(ui.available_height() * 0.35);
                     ui.vertical_centered(|ui| {
-                        ui.spinner();
+                        ui.label(
+                            egui::RichText::new("Loading Map")
+                                .size(18.0)
+                                .color(crate::theme::TEXT_PRIMARY),
+                        );
+                        ui.add_space(16.0);
+
+                        // Progress bar
+                        let bar_width = (ui.available_width() * 0.5).min(400.0);
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(bar_width, 20.0),
+                            egui::Sense::hover(),
+                        );
+                        let painter = ui.painter();
+                        painter.rect_filled(rect, 4.0, egui::Color32::from_gray(40));
+                        let fill_width = rect.width() * progress_val;
+                        if fill_width > 0.0 {
+                            let fill_rect = egui::Rect::from_min_size(
+                                rect.min,
+                                egui::vec2(fill_width, rect.height()),
+                            );
+                            painter.rect_filled(fill_rect, 4.0, crate::theme::ACCENT);
+                        }
+                        let pct_text = format!("{:.0}%", progress_val * 100.0);
+                        painter.text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            &pct_text,
+                            egui::FontId::proportional(12.0),
+                            egui::Color32::WHITE,
+                        );
+
                         ui.add_space(12.0);
                         ui.label(
                             egui::RichText::new(&self.state.map_loading_message)
-                                .size(14.0)
+                                .size(13.0)
                                 .color(crate::theme::TEXT_SECONDARY),
                         );
                     });
                 });
+            ctx.request_repaint();
             return;
+        }
+
+        // Show saving overlay while background write is in progress
+        if self.state.map_saving {
+            egui::Area::new(egui::Id::new("saving_overlay"))
+                .fixed_pos(egui::Pos2::ZERO)
+                .show(ctx, |ui| {
+                    let screen = ctx.screen_rect();
+                    ui.painter().rect_filled(
+                        screen,
+                        0.0,
+                        egui::Color32::from_black_alpha(160),
+                    );
+                    ui.allocate_ui_at_rect(screen, |ui| {
+                        ui.add_space(screen.height() * 0.4);
+                        ui.vertical_centered(|ui| {
+                            ui.label(
+                                egui::RichText::new("Saving Map")
+                                    .size(18.0)
+                                    .color(crate::theme::TEXT_PRIMARY),
+                            );
+                            ui.add_space(12.0);
+                            ui.add(
+                                egui::ProgressBar::new(1.0)
+                                    .animate(true)
+                                    .desired_width(300.0),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                egui::RichText::new(&self.state.map_saving_message)
+                                    .size(13.0)
+                                    .color(crate::theme::TEXT_SECONDARY),
+                            );
+                        });
+                    });
+                });
+            ctx.request_repaint();
         }
 
         // Dispatch to the active mode
@@ -1670,9 +2320,172 @@ impl eframe::App for MapEditorApp {
                 project,
             } => {
                 self.state.pending_asset_load = Some(asset_dir);
-                self.state.pending_map_load = Some(main_map);
-                self.state.pending_custom_maps = custom_maps;
+                // Prefer chunk directory over monolithic map
+                if let Some(ref chunk_dir) = project.chunk_dir {
+                    self.state.pending_chunk_dir_load = Some(chunk_dir.clone());
+                    // Don't load monolithic map when chunks are available
+                } else {
+                    self.state.pending_map_load = main_map;
+                    self.state.pending_custom_maps = custom_maps;
+                }
                 self.state.active_project = Some(project);
+            }
+            crate::asset_scanner::ScannerAction::ConvertLegacy { project } => {
+                if let crate::asset_scanner::ProjectType::Legacy {
+                    ref dat_path,
+                    ref spr_path,
+                } = project.project_type
+                {
+                    // Ask user for output directory
+                    if let Some(out_dir) = rfd::FileDialog::new()
+                        .set_title("Select Output Folder for Converted Assets")
+                        .pick_folder()
+                    {
+                        let dat = dat_path.clone();
+                        let spr = spr_path.clone();
+                        // Find RCHK chunk dir (look for chunks/ under world_dir or parent)
+                        let chunk_dir = project
+                            .world_dir
+                            .as_ref()
+                            .map(|wd| wd.join("chunks"))
+                            .filter(|p| p.is_dir())
+                            .or_else(|| {
+                                // Try sibling of catalog_dir: ../world/chunks
+                                let parent = project.catalog_dir.parent()?;
+                                let candidate = parent.join("world").join("chunks");
+                                if candidate.is_dir() {
+                                    Some(candidate)
+                                } else {
+                                    None
+                                }
+                            });
+
+                        let progress = std::sync::Arc::new(std::sync::Mutex::new(
+                            crate::legacy_converter::ConvertProgress {
+                                progress: 0.0,
+                                message: "Starting conversion…".to_string(),
+                            },
+                        ));
+                        let progress_clone = progress.clone();
+
+                        // Show loading state
+                        self.state.asset_status = AssetStatus::Loading {
+                            progress: 0.0,
+                            message: "Starting conversion…".to_string(),
+                        };
+                        self.state.loader.progress = Some(std::sync::Arc::new(
+                            std::sync::Mutex::new(crate::state::LoadingProgress {
+                                progress: 0.0,
+                                message: "Starting conversion…".to_string(),
+                                stage: crate::state::LoadingStage::SpriteSheets,
+                            }),
+                        ));
+                        let loader_progress = self.state.loader.progress.clone().unwrap();
+
+                        let (tx, rx) = std::sync::mpsc::channel::<Result<std::path::PathBuf, String>>();
+                        self.state.loader.asset_rx = None; // Don't confuse with project loading
+
+                        // Store the receiver so we can poll it
+                        // We'll reuse a simple channel pattern
+                        let convert_rx = rx;
+                        // Store it in scanner state for polling
+                        self.state.scanner.convert_rx = Some(convert_rx);
+
+                        std::thread::spawn(move || {
+                            // Mirror progress to loader progress for the UI
+                            let result = crate::legacy_converter::convert_project(
+                                &dat,
+                                &spr,
+                                chunk_dir.as_deref(),
+                                &out_dir,
+                                &progress_clone,
+                            );
+
+                            match result {
+                                Ok(()) => {
+                                    let _ = tx.send(Ok(out_dir));
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(Err(format!("{e:#}")));
+                                }
+                            }
+                        });
+
+                        // Spawn a polling thread to update loader progress from converter progress
+                        let progress_for_poll = progress;
+                        let loader_for_poll = loader_progress;
+                        std::thread::spawn(move || {
+                            loop {
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                let cp = progress_for_poll.lock().unwrap();
+                                let mut lp = loader_for_poll.lock().unwrap();
+                                lp.progress = cp.progress;
+                                lp.message = cp.message.clone();
+                                if cp.progress >= 1.0 {
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+            crate::asset_scanner::ScannerAction::LoadAssetsOnly { asset_dir } => {
+                // Detect asset format: protobuf (catalog-content.json) or legacy (.dat/.spr)
+                let has_catalog = asset_dir.join("catalog-content.json").exists();
+                let has_dat = std::fs::read_dir(&asset_dir).ok()
+                    .map(|entries| entries.filter_map(|e| e.ok())
+                        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("dat")))
+                    .unwrap_or(false);
+                let has_spr = std::fs::read_dir(&asset_dir).ok()
+                    .map(|entries| entries.filter_map(|e| e.ok())
+                        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("spr")))
+                    .unwrap_or(false);
+
+                if has_catalog {
+                    // Protobuf assets
+                    self.state.pending_asset_load = Some(asset_dir);
+                } else if has_dat && has_spr {
+                    // Legacy .dat/.spr — find the actual paths
+                    let dat_path = std::fs::read_dir(&asset_dir).ok()
+                        .and_then(|entries| entries.filter_map(|e| e.ok())
+                            .find(|e| e.path().extension().and_then(|x| x.to_str()) == Some("dat"))
+                            .map(|e| e.path()));
+                    let spr_path = std::fs::read_dir(&asset_dir).ok()
+                        .and_then(|entries| entries.filter_map(|e| e.ok())
+                            .find(|e| e.path().extension().and_then(|x| x.to_str()) == Some("spr"))
+                            .map(|e| e.path()));
+                    if let (Some(dat), Some(spr)) = (dat_path, spr_path) {
+                        self.state.active_project = Some(crate::asset_scanner::DiscoveredProject {
+                            catalog_dir: asset_dir.clone(),
+                            version: "legacy".to_string(),
+                            world_dir: None,
+                            main_map: None,
+                            custom_maps: Vec::new(),
+                            quest_maps: Vec::new(),
+                            world_change_maps: Vec::new(),
+                            event_maps: Vec::new(),
+                            other_maps: Vec::new(),
+                            chunk_dir: None,
+                            has_legacy_sprites: true,
+                            project_type: crate::asset_scanner::ProjectType::Legacy {
+                                dat_path: dat,
+                                spr_path: spr,
+                            },
+                            config_map_name: None,
+                        });
+                        self.state.pending_asset_load = Some(asset_dir);
+                    }
+                } else {
+                    // Try scanning the folder tree for assets
+                    self.state.pending_asset_load = Some(asset_dir);
+                }
+
+                // No map or chunk loading — assets only
+                self.state.pending_map_load = None;
+                self.state.pending_chunk_dir_load = None;
+                self.state.pending_custom_maps.clear();
+                self.state.pending_sprite_viewer_after_load = true;
+                self.state.loading_assets_only = true;
             }
             crate::asset_scanner::ScannerAction::None => {}
         }
@@ -1747,11 +2560,52 @@ impl MapEditorApp {
                         }
                     }
 
-                    ui.add_space(8.0);
+                    ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new("Scans for client assets, maps, and server configs")
                             .size(10.5)
                             .color(theme::TEXT_MUTED),
+                    );
+
+                    ui.add_space(12.0);
+
+                    // ── Load Assets Only (Sprite Editor) ──
+                    let assets_btn = egui::Button::new(
+                        egui::RichText::new("Load Assets Only (Sprite Editor)")
+                            .size(14.0)
+                            .color(theme::TEXT_PRIMARY),
+                    )
+                    .fill(theme::BG_SURFACE)
+                    .stroke(Stroke::new(1.0, theme::BORDER))
+                    .corner_radius(egui::CornerRadius::same(6))
+                    .min_size(egui::vec2(240.0, 36.0));
+
+                    if ui.add(assets_btn).clicked() {
+                        if let Some(dir) = rfd::FileDialog::new()
+                            .set_title("Select asset folder (protobuf or legacy .dat/.spr)")
+                            .pick_folder()
+                        {
+                            // Scan for the folder and trigger LoadAssetsOnly via the scanner
+                            self.state.scanner.scan_root = Some(dir.clone());
+                            self.state.scanner.scanning = true;
+                            self.state.scanner.scan_result = None;
+                            self.state.scanner.open = true;
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            self.state.scanner.scan_rx = Some(rx);
+                            std::thread::spawn(move || {
+                                let result = crate::asset_scanner::scan_directory(&dir, 4);
+                                let _ = tx.send(result);
+                            });
+                        }
+                    }
+
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Browse and edit sprites — supports protobuf catalog or legacy .dat/.spr",
+                        )
+                        .size(10.5)
+                        .color(theme::TEXT_MUTED),
                     );
 
                     ui.add_space(12.0);
@@ -1893,7 +2747,11 @@ impl MapEditorApp {
                                 .color(theme::TEXT_SECONDARY),
                         );
                         self.state.mode = EditorMode::MapEditor;
-                        self.state.active_tab = WorkspaceTab::MapEditor;
+                        // Keep the active_tab if it was already set (e.g. by LoadAssetsOnly)
+                        // Only default to MapEditor if we haven't been explicitly set to SpriteViewer
+                        if self.state.active_tab != WorkspaceTab::SpriteViewer {
+                            self.state.active_tab = WorkspaceTab::MapEditor;
+                        }
                     }
                 });
             });
@@ -2462,6 +3320,8 @@ impl MapEditorApp {
                                 &self.state.sprite_sheets,
                                 _ctx,
                                 thumb_sid,
+                                &mut self.state.texture_lru_gen,
+                                &mut self.state.texture_lru_counter,
                             ) {
                                 self.state
                                     .sprite_editor

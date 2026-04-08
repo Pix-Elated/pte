@@ -193,8 +193,52 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
         ui.add_space(4.0);
     }
 
-    // Object subcategory filter (only for Objects tab)
-    if state.sprite_category == CategoryFilter::Object {
+    // Visual category filter (from metadata — available for all tabs)
+    if !state.visual_category_groups.is_empty() {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Type")
+                    .size(10.0)
+                    .color(theme::TEXT_MUTED),
+            );
+            let selected_label = if state.visual_category_filter.is_empty() {
+                "All"
+            } else {
+                &state.visual_category_filter
+            };
+            egui::ComboBox::from_id_salt("visual_cat")
+                .width(ui.available_width() - 4.0)
+                .selected_text(egui::RichText::new(selected_label).size(10.0))
+                .show_ui(ui, |ui| {
+                    // "All" option
+                    if ui
+                        .selectable_label(
+                            state.visual_category_filter.is_empty(),
+                            egui::RichText::new("All").size(10.0),
+                        )
+                        .clicked()
+                    {
+                        state.visual_category_filter.clear();
+                        state.sprite_page = 0;
+                    }
+                    // Visual category groups
+                    for group in &state.visual_category_groups {
+                        if ui
+                            .selectable_label(
+                                state.visual_category_filter == *group,
+                                egui::RichText::new(group).size(10.0),
+                            )
+                            .clicked()
+                        {
+                            state.visual_category_filter = group.clone();
+                            state.sprite_page = 0;
+                        }
+                    }
+                });
+        });
+        ui.add_space(4.0);
+    } else if state.sprite_category == CategoryFilter::Object {
+        // Fallback to old subcategory filter if no visual metadata loaded
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new("Type")
@@ -234,15 +278,33 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
     let search_lower = state.sprite_search.to_lowercase();
     let subcat = state.object_subcategory;
     let is_object = state.sprite_category == CategoryFilter::Object;
+    let visual_filter = &state.visual_category_filter;
+    let has_visual_meta = !state.visual_metadata.is_empty();
 
     let filtered: Vec<_> = all_items
         .into_iter()
         .filter(|a| {
-            // Apply subcategory filter for objects
-            if is_object && subcat != ObjectSubcategory::All && !matches_subcategory(a, subcat) {
-                return false;
+            // Apply visual category filter (from metadata)
+            if has_visual_meta && !visual_filter.is_empty() {
+                if let Some(id) = a.id {
+                    if let Some(vcat) = state.visual_metadata.get(&id) {
+                        // Match if the visual category starts with the selected group
+                        if !vcat.starts_with(visual_filter.as_str()) {
+                            return false;
+                        }
+                    } else {
+                        return false; // No metadata = filtered out when a filter is active
+                    }
+                } else {
+                    return false;
+                }
+            } else if !has_visual_meta {
+                // Fallback: use old subcategory filter for objects
+                if is_object && subcat != ObjectSubcategory::All && !matches_subcategory(a, subcat) {
+                    return false;
+                }
             }
-            // Apply text search
+            // Apply text search (matches ID, name, or visual category)
             if !search_lower.is_empty() {
                 let id_match =
                     a.id.is_some_and(|id| id.to_string().contains(&search_lower));
@@ -250,7 +312,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                     .name
                     .as_ref()
                     .is_some_and(|n| n.to_lowercase().contains(&search_lower));
-                if !id_match && !name_match {
+                let cat_match = has_visual_meta
+                    && a.id.is_some_and(|id| {
+                        state.visual_metadata
+                            .get(&id)
+                            .is_some_and(|c| c.to_lowercase().contains(&search_lower))
+                    });
+                if !id_match && !name_match && !cat_match {
                     return false;
                 }
             }
@@ -361,6 +429,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut EditorState) {
                             &state.sprite_sheets,
                             ui.ctx(),
                             sid,
+                            &mut state.texture_lru_gen,
+                            &mut state.texture_lru_counter,
                         ) {
                             let inner = rect.shrink(3.0);
                             ui.painter().image(

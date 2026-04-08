@@ -91,6 +91,21 @@ A modern, GPU-accelerated map and sprite editor for Open Tibia servers. Built in
 - **Performance monitor** overlay (FPS, frame time, tile counts)
 - **Auto-updater** — checks GitHub releases for new versions
 
+### AI / MCP Integration
+- **MCP server** (`mcp_server.py`) — full [Model Context Protocol](https://modelcontextprotocol.io) bridge for AI-driven map editing
+- **16 tools** — status, tile CRUD, fill, replace, batch operations, search, undo/redo, camera
+- **3 resources** — live editor status, map metadata, map stats (readable by agents)
+- **3 prompts** — guided workflows for building structures, analyzing areas, replacing terrain
+- **Progress reporting** — bulk and batch operations emit per-step progress notifications
+- **Structured output** — Pydantic models for type-safe responses (EditorStatus, TileData, MapMetadata, etc.)
+- **Batch operations** — execute up to 500 edits in a single tool call with progress per step
+- **Persistent connection** — async HTTP client with connection pooling for low-latency editor communication
+
+```
+pip install "mcp[cli]" httpx
+python mcp_server.py
+```
+
 ---
 
 ## Architecture

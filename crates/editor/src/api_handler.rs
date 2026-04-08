@@ -19,7 +19,7 @@ pub fn process_commands(state: &mut EditorState, cmd_rx: &std::sync::mpsc::Recei
 
 fn handle_request(state: &mut EditorState, req: &ApiRequest) -> ApiResponse {
     match req.method.as_str() {
-        "status" => handle_status(state),
+        "status" | "editor_status" => handle_status(state),
         "get_tile" => handle_get_tile(state, &req.params),
         "set_tile" => handle_set_tile(state, &req.params),
         "remove_tile" => handle_remove_tile(state, &req.params),
@@ -34,6 +34,10 @@ fn handle_request(state: &mut EditorState, req: &ApiRequest) -> ApiResponse {
         "redo" => handle_redo(state),
         "search_appearances" => handle_search_appearances(state, &req.params),
         "map_stats" => handle_map_stats(state),
+        "open_map" => handle_open_map(state, &req.params),
+        "load_assets" => handle_load_assets(state, &req.params),
+        "load_chunk_dir" => handle_load_chunk_dir(state, &req.params),
+        "save_chunk_dir" => handle_save_chunk_dir(state, &req.params),
         _ => ApiResponse::error(format!("Unknown method: {}", req.method)),
     }
 }
@@ -42,7 +46,7 @@ fn handle_request(state: &mut EditorState, req: &ApiRequest) -> ApiResponse {
 
 fn handle_status(state: &EditorState) -> ApiResponse {
     let map_loaded = state.map_data.is_some();
-    let tile_count = state.map_data.as_ref().map_or(0, |m| m.tile_count());
+    let tile_count = state.cached_tile_count;
     let assets_ready = state.assets_ready();
 
     ApiResponse::success(json!({
@@ -466,6 +470,167 @@ fn handle_map_stats(state: &EditorState) -> ApiResponse {
         "townCount": map.towns.len(),
         "waypointCount": map.waypoints.len(),
     }))
+}
+
+fn handle_open_map(state: &mut EditorState, params: &Value) -> ApiResponse {
+    let Some(path_str) = params["path"].as_str() else {
+        return ApiResponse::error("Missing path parameter");
+    };
+    let path = std::path::Path::new(path_str);
+    if !path.exists() {
+        return ApiResponse::error(format!("File not found: {}", path_str));
+    }
+
+    match pte_otbm::parse_otbm(path) {
+        Ok(map) => {
+            let tile_count = map.tile_count();
+            let town_count = map.towns.len();
+            state.map_data = Some(map);
+            state.cache_dirty = true;
+            ApiResponse::success(json!({
+                "loaded": true,
+                "tileCount": tile_count,
+                "townCount": town_count,
+            }))
+        }
+        Err(e) => ApiResponse::error(format!("Failed to parse OTBM: {}", e)),
+    }
+}
+
+fn handle_load_assets(state: &mut EditorState, params: &Value) -> ApiResponse {
+    let Some(path_str) = params["path"].as_str() else {
+        return ApiResponse::error("Missing path parameter");
+    };
+    let dir = std::path::Path::new(path_str);
+    if !dir.exists() || !dir.is_dir() {
+        return ApiResponse::error(format!("Directory not found: {}", path_str));
+    }
+    // Queue asset loading — the update loop will pick this up
+    state.pending_api_asset_load = Some(dir.to_path_buf());
+    ApiResponse::success(json!({"queued": true}))
+}
+
+fn handle_load_chunk_dir(state: &mut EditorState, params: &Value) -> ApiResponse {
+    let Some(path_str) = params["path"].as_str() else {
+        return ApiResponse::error("Missing path parameter");
+    };
+    let dir = std::path::Path::new(path_str);
+    if !dir.exists() || !dir.is_dir() {
+        return ApiResponse::error(format!("Directory not found: {}", path_str));
+    }
+
+    // Read manifest for metadata without loading all tiles
+    let manifest_path = dir.join("manifest.json");
+    if !manifest_path.exists() {
+        return ApiResponse::error("manifest.json not found in chunk directory");
+    }
+
+    let manifest_data = match std::fs::read_to_string(&manifest_path) {
+        Ok(d) => d,
+        Err(e) => return ApiResponse::error(format!("Failed to read manifest: {}", e)),
+    };
+    let manifest: pte_otbm::chunk_io::ChunkManifest = match serde_json::from_str(&manifest_data) {
+        Ok(m) => m,
+        Err(e) => return ApiResponse::error(format!("Failed to parse manifest: {}", e)),
+    };
+
+    // Create an empty map with metadata from manifest
+    let mut map = pte_otbm::MapData::new();
+    map.width = manifest.world_width;
+    map.height = manifest.world_height;
+    map.description = manifest.description.clone();
+    map.spawn_file = manifest.spawn_file.clone();
+    map.house_file = manifest.house_file.clone();
+    map.version = 3;
+    map.item_major_version = 3;
+    map.item_minor_version = 56;
+
+    for t in &manifest.towns {
+        map.towns.push(pte_otbm::Town {
+            id: t.id,
+            name: t.name.clone(),
+            position: pte_otbm::Position { x: t.x, y: t.y, z: t.z },
+        });
+    }
+    for wp in &manifest.waypoints {
+        map.waypoints.push(pte_otbm::Waypoint {
+            name: wp.name.clone(),
+            position: pte_otbm::Position { x: wp.x, y: wp.y, z: wp.z },
+        });
+    }
+
+    // Load only chunks near the camera (viewport-based loading)
+    // Default: load chunks within 1024 tiles of camera center
+    let cam_x = params["x"].as_f64().unwrap_or(state.camera.center_x) as i32;
+    let cam_y = params["y"].as_f64().unwrap_or(state.camera.center_y) as i32;
+    let radius = params["radius"].as_i64().unwrap_or(1024) as i32;
+    let z_filter = params["z"].as_u64().map(|v| v as u8);
+
+    let mut loaded_count = 0;
+    for entry in &manifest.chunks {
+        if let Some(z) = z_filter {
+            if entry.z != z { continue; }
+        }
+        // Check if chunk is within radius of camera
+        let chunk_cx = entry.base_x as i32 + 128; // center of 256-tile chunk
+        let chunk_cy = entry.base_y as i32 + 128;
+        let dx = (chunk_cx - cam_x).abs();
+        let dy = (chunk_cy - cam_y).abs();
+        if dx > radius || dy > radius { continue; }
+
+        let chunk_path = dir.join(&entry.path);
+        if !chunk_path.exists() { continue; }
+
+        if let Err(e) = pte_otbm::chunk_io::load_chunk_into(&mut map, &chunk_path) {
+            tracing::warn!("Failed to load chunk {}: {}", entry.path, e);
+        }
+        loaded_count += 1;
+    }
+
+    let tile_count = map.tile_count();
+    let chunk_count = map.chunks.len();
+    let town_count = map.towns.len();
+
+    // Store the chunk dir path for later use (loading more chunks on camera move)
+    state.chunk_dir = Some(path_str.to_string());
+    state.chunk_manifest = Some(manifest);
+    state.map_data = Some(map);
+
+    // Move camera to first town or center of loaded area
+    if let Some(town) = state.map_data.as_ref().and_then(|m| m.towns.first()) {
+        state.camera.center_x = town.position.x as f64;
+        state.camera.center_y = town.position.y as f64;
+        state.camera.z_level = town.position.z;
+    }
+
+    ApiResponse::success(json!({
+        "loaded": true,
+        "tileCount": tile_count,
+        "chunkCount": chunk_count,
+        "chunksLoaded": loaded_count,
+        "chunksTotal": state.chunk_manifest.as_ref().map_or(0, |m| m.chunks.len()),
+        "townCount": town_count,
+        "cameraX": cam_x,
+        "cameraY": cam_y,
+    }))
+}
+
+fn handle_save_chunk_dir(state: &EditorState, params: &Value) -> ApiResponse {
+    let Some(path_str) = params["path"].as_str() else {
+        return ApiResponse::error("Missing path parameter");
+    };
+    let Some(map) = &state.map_data else {
+        return ApiResponse::error("No map loaded");
+    };
+    let dir = std::path::Path::new(path_str);
+
+    match pte_otbm::chunk_io::save_chunk_dir(map, dir) {
+        Ok(count) => ApiResponse::success(json!({
+            "saved": true,
+            "chunkCount": count,
+        })),
+        Err(e) => ApiResponse::error(format!("Failed to save chunk dir: {}", e)),
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
